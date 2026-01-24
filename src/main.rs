@@ -524,6 +524,10 @@ fn push_metrics(client: &Client, args: &Args, timeseries: Vec<TimeSeries>) -> Re
     let response = req_builder.send().into_diagnostic()?;
     debug!("push response status: {}", response.status());
 
+    if response.status() != 204 {
+        return Err(miette!("push failed with status: {}", response.status()));
+    }
+
     Ok(())
 }
 
