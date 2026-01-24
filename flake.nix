@@ -111,7 +111,7 @@
             Service = {
               Type = "simple";
               ExecStartPre = lib.optionals (cfg.passwordFile != null) [
-                "+${pkgs.coreutils}/bin/sh -c 'echo \"AGEMON_REMOTE_WRITE_PASSWORD=$(cat ${cfg.passwordFile})\" > /run/agemon-env'"
+                "+/bin/sh -c 'echo \"AGEMON_REMOTE_WRITE_PASSWORD=$(cat ${cfg.passwordFile})\" > /run/agemon-env'"
               ];
               EnvironmentFile = lib.optionals (cfg.passwordFile != null) [
                 "/run/agemon-env"
