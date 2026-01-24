@@ -4,10 +4,61 @@ A lightweight agent that collects system metrics and pushes them to Prometheus v
 
 ## Metrics
 
-- **CPU**: `agemon_cpu_usage_percent`
-- **Memory**: `agemon_memory_total_bytes`, `agemon_memory_used_bytes`, `agemon_swap_total_bytes`, `agemon_swap_used_bytes`
-- **Disk**: `agemon_disk_total_bytes`, `agemon_disk_available_bytes` (with `mount_point` label)
-- **Network**: `agemon_network_received_bytes`, `agemon_network_transmitted_bytes` (with `interface` label)
+### CPU
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `agemon_cpu_usage_percent` | gauge | - | Global CPU usage percentage (0-100) |
+| `agemon_cpu_count` | gauge | - | Number of logical CPU cores |
+| `agemon_cpu_core_usage_percent` | gauge | `cpu` | Per-core CPU usage percentage |
+
+### Memory
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `agemon_memory_total_bytes` | gauge | - | Total physical memory in bytes |
+| `agemon_memory_used_bytes` | gauge | - | Used physical memory in bytes |
+| `agemon_memory_free_bytes` | gauge | - | Free physical memory in bytes |
+| `agemon_memory_available_bytes` | gauge | - | Available memory (includes cached/buffered) |
+| `agemon_memory_usage_ratio` | gauge | - | Memory usage ratio (0.0-1.0) |
+| `agemon_swap_total_bytes` | gauge | - | Total swap space in bytes |
+| `agemon_swap_used_bytes` | gauge | - | Used swap space in bytes |
+| `agemon_swap_free_bytes` | gauge | - | Free swap space in bytes |
+| `agemon_swap_usage_ratio` | gauge | - | Swap usage ratio (0.0-1.0) |
+
+### Disk
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `agemon_disk_total_bytes` | gauge | `mount_point`, `device`, `fs_type` | Total disk space in bytes |
+| `agemon_disk_available_bytes` | gauge | `mount_point`, `device`, `fs_type` | Available disk space in bytes |
+| `agemon_disk_used_bytes` | gauge | `mount_point`, `device`, `fs_type` | Used disk space in bytes |
+| `agemon_disk_usage_ratio` | gauge | `mount_point`, `device`, `fs_type` | Disk usage ratio (0.0-1.0) |
+| `agemon_disk_is_removable` | gauge | `mount_point`, `device`, `fs_type` | Whether disk is removable (1=yes, 0=no) |
+
+### Network
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `agemon_network_received_bytes_total` | counter | `interface` | Total bytes received on interface |
+| `agemon_network_transmitted_bytes_total` | counter | `interface` | Total bytes transmitted on interface |
+| `agemon_network_received_packets_total` | counter | `interface` | Total packets received on interface |
+| `agemon_network_transmitted_packets_total` | counter | `interface` | Total packets transmitted on interface |
+| `agemon_network_received_errors_total` | counter | `interface` | Total receive errors on interface |
+| `agemon_network_transmitted_errors_total` | counter | `interface` | Total transmit errors on interface |
+
+### System
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `agemon_system_uptime_seconds` | gauge | - | System uptime in seconds |
+| `agemon_system_boot_time_seconds` | gauge | - | System boot time as Unix timestamp |
+| `agemon_load_average_1m` | gauge | - | 1-minute load average |
+| `agemon_load_average_5m` | gauge | - | 5-minute load average |
+| `agemon_load_average_15m` | gauge | - | 15-minute load average |
+| `agemon_info` | gauge | `os_name`, `os_version`, `kernel_version`, `arch` | System information (always 1) |
+
+All metrics include a `hostname` label.
 
 ## Installation
 
