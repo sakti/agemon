@@ -492,7 +492,7 @@ fn collect_metrics(
     timeseries
 }
 
-fn push_metrics(args: &Args, timeseries: Vec<TimeSeries>) -> Result<()> {
+fn push_metrics(client: &Client, args: &Args, timeseries: Vec<TimeSeries>) -> Result<()> {
     let write_request = WriteRequest { timeseries };
 
     let mut req = write_request
@@ -513,11 +513,6 @@ fn push_metrics(args: &Args, timeseries: Vec<TimeSeries>) -> Result<()> {
         );
     }
 
-    let client = Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .into_diagnostic()?;
-
     let (parts, body) = req.into_parts();
     let method = reqwest::Method::from_str(parts.method.as_str()).into_diagnostic()?;
     let mut req_builder = client.request(method, parts.uri.to_string());
@@ -533,6 +528,7 @@ fn push_metrics(args: &Args, timeseries: Vec<TimeSeries>) -> Result<()> {
 }
 
 fn collect_and_push(
+    client: &Client,
     args: &Args,
     sys: &mut System,
     disks: &mut Disks,
@@ -540,7 +536,7 @@ fn collect_and_push(
 ) -> Result<()> {
     let timeseries = collect_metrics(sys, disks, networks);
     info!("collected {} metrics", timeseries.len());
-    push_metrics(args, timeseries)?;
+    push_metrics(client, args, timeseries)?;
     Ok(())
 }
 
@@ -577,10 +573,15 @@ fn main() -> Result<()> {
     let mut disks = Disks::new_with_refreshed_list();
     let mut networks = Networks::new_with_refreshed_list();
 
+    let client = Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .into_diagnostic()?;
+
     info!("starting agemon with interval: {}s", interval);
 
     execute_at_interval(
-        || collect_and_push(&args, &mut sys, &mut disks, &mut networks),
+        || collect_and_push(&client, &args, &mut sys, &mut disks, &mut networks),
         interval,
     )?;
 
