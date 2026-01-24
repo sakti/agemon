@@ -36,6 +36,15 @@ A lightweight agent that collects system metrics and pushes them to Prometheus v
 | `agemon_disk_usage_ratio` | gauge | `mount_point`, `device`, `fs_type` | Disk usage ratio (0.0-1.0) |
 | `agemon_disk_is_removable` | gauge | `mount_point`, `device`, `fs_type` | Whether disk is removable (1=yes, 0=no) |
 
+### Disk I/O
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `agemon_disk_io_read_bytes_total` | counter | - | Total bytes read from disk (aggregated from all processes) |
+| `agemon_disk_io_written_bytes_total` | counter | - | Total bytes written to disk (aggregated from all processes) |
+| `agemon_disk_io_read_bytes_per_sec` | gauge | - | Bytes read per second since last refresh |
+| `agemon_disk_io_written_bytes_per_sec` | gauge | - | Bytes written per second since last refresh |
+
 ### Network
 
 | Metric | Type | Labels | Description |
@@ -153,6 +162,7 @@ Import `grafana-dashboard.json` into Grafana for a pre-built dashboard with:
 - Load averages (1m, 5m, 15m)
 - Memory and swap usage over time
 - Disk usage by mount point
+- Disk I/O read/write rates
 - Network receive/transmit rates, packets, and errors
 
 The dashboard includes variables for datasource and hostname filtering.

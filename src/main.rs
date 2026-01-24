@@ -9,7 +9,7 @@ use clap::Parser;
 use miette::{IntoDiagnostic, Result, miette};
 use prometheus_remote_write::{LABEL_NAME, Label, Sample, TimeSeries, WriteRequest};
 use reqwest::blocking::Client;
-use sysinfo::{Disks, Networks, System};
+use sysinfo::{Disks, Networks, ProcessRefreshKind, System};
 use tracing::{debug, error, info};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -342,6 +342,58 @@ fn collect_network_metrics(
     }
 }
 
+fn collect_disk_io_metrics(
+    sys: &System,
+    timestamp: i64,
+    hostname: &str,
+    timeseries: &mut Vec<TimeSeries>,
+) {
+    let mut total_read_bytes: u64 = 0;
+    let mut total_written_bytes: u64 = 0;
+    let mut read_bytes_per_sec: u64 = 0;
+    let mut written_bytes_per_sec: u64 = 0;
+
+    for (_pid, process) in sys.processes() {
+        let disk_usage = process.disk_usage();
+        total_read_bytes += disk_usage.total_read_bytes;
+        total_written_bytes += disk_usage.total_written_bytes;
+        read_bytes_per_sec += disk_usage.read_bytes;
+        written_bytes_per_sec += disk_usage.written_bytes;
+    }
+
+    // agemon_disk_io_read_bytes_total: Total bytes read from disk (counter)
+    timeseries.push(create_timeseries(
+        "agemon_disk_io_read_bytes_total",
+        total_read_bytes as f64,
+        timestamp,
+        hostname,
+    ));
+
+    // agemon_disk_io_written_bytes_total: Total bytes written to disk (counter)
+    timeseries.push(create_timeseries(
+        "agemon_disk_io_written_bytes_total",
+        total_written_bytes as f64,
+        timestamp,
+        hostname,
+    ));
+
+    // agemon_disk_io_read_bytes_per_sec: Bytes read per second since last refresh
+    timeseries.push(create_timeseries(
+        "agemon_disk_io_read_bytes_per_sec",
+        read_bytes_per_sec as f64,
+        timestamp,
+        hostname,
+    ));
+
+    // agemon_disk_io_written_bytes_per_sec: Bytes written per second since last refresh
+    timeseries.push(create_timeseries(
+        "agemon_disk_io_written_bytes_per_sec",
+        written_bytes_per_sec as f64,
+        timestamp,
+        hostname,
+    ));
+}
+
 fn collect_system_metrics(timestamp: i64, hostname: &str, timeseries: &mut Vec<TimeSeries>) {
     // agemon_system_uptime_seconds: System uptime in seconds
     timeseries.push(create_timeseries(
@@ -422,12 +474,18 @@ fn collect_metrics(
     let mut timeseries = vec![];
 
     sys.refresh_all();
+    sys.refresh_processes_specifics(
+        sysinfo::ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing().with_disk_usage(),
+    );
     disks.refresh(true);
     networks.refresh(true);
 
     collect_cpu_metrics(sys, timestamp, &hostname, &mut timeseries);
     collect_memory_metrics(sys, timestamp, &hostname, &mut timeseries);
     collect_disk_metrics(disks, timestamp, &hostname, &mut timeseries);
+    collect_disk_io_metrics(sys, timestamp, &hostname, &mut timeseries);
     collect_network_metrics(networks, timestamp, &hostname, &mut timeseries);
     collect_system_metrics(timestamp, &hostname, &mut timeseries);
 
