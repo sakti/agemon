@@ -4,6 +4,14 @@ default:
 run:
     cargo r
 
+run_prometheus:
+    docker run --name prometheus -p 9090:9090 \
+    -v ./prometheus.yml:/etc/prometheus/prometheus.yml \
+    -v ./data:/prometheus \
+    prom/prometheus \
+    --config.file=/etc/prometheus/prometheus.yml \
+    --web.enable-remote-write-receiver
+
 setup:
     cargo install cross
 
