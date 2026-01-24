@@ -36,11 +36,10 @@
         pname = "agemon";
         version = "0.1.0";
 
-        buildInputs =
-          pkgs.lib.optionals pkgs.stdenv.isDarwin [
-            pkgs.libiconv
-            pkgs.apple-sdk_15
-          ];
+        buildInputs = pkgs.lib.optionals pkgs.stdenv.isDarwin [
+          pkgs.libiconv
+          pkgs.apple-sdk_15
+        ];
 
         nativeBuildInputs = with pkgs; [
           pkg-config
@@ -111,19 +110,27 @@
 
             Service = {
               Type = "simple";
+              ExecStartPre = lib.optionals (cfg.passwordFile != null) [
+                "+${pkgs.coreutils}/bin/sh -c 'echo \"AGEMON_REMOTE_WRITE_PASSWORD=$(cat ${cfg.passwordFile})\" > /run/agemon-env'"
+              ];
+              EnvironmentFile = lib.optionals (cfg.passwordFile != null) [
+                "/run/agemon-env"
+              ];
               ExecStart = let
-                args = [
-                  "--interval" (toString cfg.interval)
-                  "--remote-write-url" cfg.remoteWriteUrl
-                ] ++ lib.optionals (cfg.username != null) [
-                  "--username" cfg.username
-                ];
+                args =
+                  [
+                    "--interval"
+                    (toString cfg.interval)
+                    "--remote-write-url"
+                    cfg.remoteWriteUrl
+                  ]
+                  ++ lib.optionals (cfg.username != null) [
+                    "--username"
+                    cfg.username
+                  ];
               in "${cfg.package}/bin/agemon ${lib.escapeShellArgs args}";
               Restart = "on-failure";
               RestartSec = 5;
-              Environment = lib.optionals (cfg.passwordFile != null) [
-                "AGEMON_REMOTE_WRITE_PASSWORD=$(cat ${cfg.passwordFile})"
-              ];
             };
 
             Install = {

@@ -4,6 +4,10 @@ default:
 run:
     cargo r
 
+fmt:
+    cargo fmt
+    alejandra flake.nix
+
 run_prometheus:
     docker run --name prometheus -p 9090:9090 \
     -v ./prometheus.yml:/etc/prometheus/prometheus.yml \
