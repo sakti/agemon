@@ -144,6 +144,19 @@ Then enable the service:
 }
 ```
 
+## Grafana Dashboard
+
+Import `grafana-dashboard.json` into Grafana for a pre-built dashboard with:
+
+- System overview (CPU, memory, swap, uptime, cores)
+- CPU usage and per-core breakdown
+- Load averages (1m, 5m, 15m)
+- Memory and swap usage over time
+- Disk usage by mount point
+- Network receive/transmit rates, packets, and errors
+
+The dashboard includes variables for datasource and hostname filtering.
+
 ## Development
 
 Enter the development shell:
