@@ -1,13 +1,26 @@
-use xshell::{Shell, cmd};
-
 fn main() -> anyhow::Result<()> {
-    println!("Agent monitoring setup");
+    println!("Agent monitoring");
 
-    let sh = Shell::new()?;
+    // println!("------------------");
+    // println!(
+    //     "{}",
+    //     get_url_content("https://saktidwicahyono.name/healthcheck")?
+    // );
+    // println!("{}", get_url_content(&get_vector_download_url())?);
+    // println!("------------------");
 
-    sh.change_dir("/");
-    cmd!(sh, "pwd").run()?;
-    cmd!(sh, "ls -lah").run()?;
+    println!(
+        "User's Name            whoami::realname():    {}",
+        whoami::realname(),
+    );
+    println!(
+        "Device's Platform      whoami::platform():    {}",
+        whoami::platform(),
+    );
+    println!(
+        "Device's CPU Arch      whoami::arch():        {}",
+        whoami::arch(),
+    );
 
     Ok(())
 }
