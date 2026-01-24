@@ -11,8 +11,22 @@ A lightweight agent that collects system metrics and pushes them to Prometheus v
 
 ## Installation
 
+### Using Cargo
+
 ```bash
 cargo build --release
+```
+
+### Using Nix
+
+```bash
+nix build
+```
+
+Or run directly:
+
+```bash
+nix run
 ```
 
 ## Usage
@@ -51,4 +65,38 @@ export AGEMON_REMOTE_WRITE_URL=https://prometheus.example.com/api/v1/write
 export AGEMON_REMOTE_WRITE_USERNAME=myuser
 export AGEMON_REMOTE_WRITE_PASSWORD=mypass
 agemon -i 30
+```
+
+## Home Manager Module
+
+Add to your flake inputs:
+
+```nix
+{
+  inputs.agemon.url = "github:sakti/agemon";
+}
+```
+
+Then enable the service:
+
+```nix
+{
+  imports = [inputs.agemon.homeManagerModules.default];
+
+  services.agemon = {
+    enable = true;
+    interval = 15;
+    remoteWriteUrl = "https://prometheus.example.com/api/v1/write";
+    username = "myuser";
+    passwordFile = "/run/secrets/agemon-password";
+  };
+}
+```
+
+## Development
+
+Enter the development shell:
+
+```bash
+nix develop
 ```
