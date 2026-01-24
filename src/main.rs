@@ -207,7 +207,12 @@ fn collect_memory_metrics(
     ));
 }
 
-fn collect_disk_metrics(disks: &Disks, timestamp: i64, hostname: &str, timeseries: &mut Vec<TimeSeries>) {
+fn collect_disk_metrics(
+    disks: &Disks,
+    timestamp: i64,
+    hostname: &str,
+    timeseries: &mut Vec<TimeSeries>,
+) {
     for disk in disks.list() {
         let mount_point = disk.mount_point().to_string_lossy().into_owned();
         let device = disk.name().to_string_lossy().into_owned();

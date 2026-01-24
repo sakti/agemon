@@ -151,3 +151,17 @@ Enter the development shell:
 ```bash
 nix develop
 ```
+
+### Formatting
+
+Format code using rustfmt:
+
+```bash
+cargo fmt
+```
+
+Check formatting without applying changes:
+
+```bash
+cargo fmt --check
+```
