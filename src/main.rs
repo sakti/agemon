@@ -9,7 +9,7 @@ use clap::Parser;
 use miette::{IntoDiagnostic, Result, miette};
 use prometheus_remote_write::{LABEL_NAME, Label, Sample, TimeSeries, WriteRequest};
 use reqwest::blocking::Client;
-use sysinfo::{Disks, Networks, ProcessRefreshKind, System};
+use sysinfo::{Components, Disks, Networks, ProcessRefreshKind, System};
 use tracing::{debug, error, info};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -457,10 +457,56 @@ fn collect_system_metrics(timestamp: i64, hostname: &str, timeseries: &mut Vec<T
     ));
 }
 
+fn collect_temperature_metrics(
+    components: &Components,
+    timestamp: i64,
+    hostname: &str,
+    timeseries: &mut Vec<TimeSeries>,
+) {
+    for component in components.list() {
+        let sensor = component.label();
+        let labels = vec![("sensor", sensor)];
+
+        // agemon_temperature_celsius: Current temperature of the sensor
+        if let Some(temp) = component.temperature() {
+            timeseries.push(create_timeseries_with_labels(
+                "agemon_temperature_celsius",
+                temp as f64,
+                timestamp,
+                hostname,
+                labels.clone(),
+            ));
+        }
+
+        // agemon_temperature_max_celsius: Maximum observed temperature of the sensor
+        if let Some(max) = component.max() {
+            timeseries.push(create_timeseries_with_labels(
+                "agemon_temperature_max_celsius",
+                max as f64,
+                timestamp,
+                hostname,
+                labels.clone(),
+            ));
+        }
+
+        // agemon_temperature_critical_celsius: Critical threshold temperature (only if available)
+        if let Some(critical) = component.critical() {
+            timeseries.push(create_timeseries_with_labels(
+                "agemon_temperature_critical_celsius",
+                critical as f64,
+                timestamp,
+                hostname,
+                labels,
+            ));
+        }
+    }
+}
+
 fn collect_metrics(
     sys: &mut System,
     disks: &mut Disks,
     networks: &mut Networks,
+    components: &mut Components,
 ) -> Vec<TimeSeries> {
     let hostname = hostname::get()
         .map(|h| h.to_string_lossy().into_owned())
@@ -481,12 +527,14 @@ fn collect_metrics(
     );
     disks.refresh(true);
     networks.refresh(true);
+    components.refresh(true);
 
     collect_cpu_metrics(sys, timestamp, &hostname, &mut timeseries);
     collect_memory_metrics(sys, timestamp, &hostname, &mut timeseries);
     collect_disk_metrics(disks, timestamp, &hostname, &mut timeseries);
     collect_disk_io_metrics(sys, timestamp, &hostname, &mut timeseries);
     collect_network_metrics(networks, timestamp, &hostname, &mut timeseries);
+    collect_temperature_metrics(components, timestamp, &hostname, &mut timeseries);
     collect_system_metrics(timestamp, &hostname, &mut timeseries);
 
     timeseries
@@ -537,8 +585,9 @@ fn collect_and_push(
     sys: &mut System,
     disks: &mut Disks,
     networks: &mut Networks,
+    components: &mut Components,
 ) -> Result<()> {
-    let timeseries = collect_metrics(sys, disks, networks);
+    let timeseries = collect_metrics(sys, disks, networks, components);
     info!("collected {} metrics", timeseries.len());
     push_metrics(client, args, timeseries)?;
     Ok(())
@@ -576,6 +625,7 @@ fn main() -> Result<()> {
     let mut sys = System::new_all();
     let mut disks = Disks::new_with_refreshed_list();
     let mut networks = Networks::new_with_refreshed_list();
+    let mut components = Components::new_with_refreshed_list();
 
     let client = Client::builder()
         .timeout(Duration::from_secs(30))
@@ -585,7 +635,16 @@ fn main() -> Result<()> {
     info!("starting agemon with interval: {}s", interval);
 
     execute_at_interval(
-        || collect_and_push(&client, &args, &mut sys, &mut disks, &mut networks),
+        || {
+            collect_and_push(
+                &client,
+                &args,
+                &mut sys,
+                &mut disks,
+                &mut networks,
+                &mut components,
+            )
+        },
         interval,
     )?;
 

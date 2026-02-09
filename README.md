@@ -56,6 +56,14 @@ A lightweight agent that collects system metrics and pushes them to Prometheus v
 | `agemon_network_received_errors_total` | counter | `interface` | Total receive errors on interface |
 | `agemon_network_transmitted_errors_total` | counter | `interface` | Total transmit errors on interface |
 
+### Temperature
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `agemon_temperature_celsius` | gauge | `sensor` | Current temperature of the sensor |
+| `agemon_temperature_max_celsius` | gauge | `sensor` | Maximum observed temperature of the sensor |
+| `agemon_temperature_critical_celsius` | gauge | `sensor` | Critical threshold temperature (only emitted if available) |
+
 ### System
 
 | Metric | Type | Labels | Description |
