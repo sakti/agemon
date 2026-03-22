@@ -10,7 +10,7 @@ use clap::Parser;
 use miette::{IntoDiagnostic, Result, miette};
 use prometheus_remote_write::{LABEL_NAME, Label, Sample, TimeSeries, WriteRequest};
 use reqwest::blocking::Client;
-use sysinfo::{Components, Disks, Networks, ProcessRefreshKind, System};
+use sysinfo::{Components, Disks, MemoryRefreshKind, Networks, ProcessRefreshKind, System};
 use tracing::{debug, error, info};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -611,7 +611,8 @@ fn collect_metrics(
 
     let mut timeseries = vec![];
 
-    sys.refresh_all();
+    sys.refresh_memory_specifics(MemoryRefreshKind::everything());
+    sys.refresh_cpu_usage();
     sys.refresh_processes_specifics(
         sysinfo::ProcessesToUpdate::All,
         true,
