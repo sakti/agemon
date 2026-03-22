@@ -521,7 +521,11 @@ fn collect_process_metrics(
     for process in sys.processes().values() {
         let name = process.name().to_string_lossy().into_owned();
         *cpu_by_name.entry(name.clone()).or_default() += process.cpu_usage() as f64;
-        *mem_by_name.entry(name).or_default() += process.memory();
+        // Only count memory for non-thread processes to avoid double-counting RSS
+        // (threads share address space, so each thread reports the same RSS as its parent)
+        if process.thread_kind().is_none() {
+            *mem_by_name.entry(name).or_default() += process.memory();
+        }
     }
 
     // agemon_process_count: Total number of running processes
