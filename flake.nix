@@ -99,6 +99,12 @@
             default = null;
             description = "Path to file containing password for Basic authentication.";
           };
+
+          topProcesses = lib.mkOption {
+            type = lib.types.int;
+            default = 10;
+            description = "Number of top processes to report by CPU and memory (0 to disable).";
+          };
         };
 
         config = lib.mkIf cfg.enable {
@@ -120,6 +126,8 @@
                     (toString cfg.interval)
                     "--remote-write-url"
                     cfg.remoteWriteUrl
+                    "--top-processes"
+                    (toString cfg.topProcesses)
                   ]
                   ++ lib.optionals (cfg.username != null) [
                     "--username"

@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     str::FromStr,
     thread,
     time::{Duration, Instant},
@@ -36,6 +37,10 @@ struct Args {
     /// Password for Basic authentication (optional)
     #[arg(short, long, env = "AGEMON_REMOTE_WRITE_PASSWORD")]
     password: Option<String>,
+
+    /// Number of top processes to report by CPU and memory (0 to disable)
+    #[arg(short = 't', long, env = "AGEMON_TOP_PROCESSES", default_value_t = 10)]
+    top_processes: usize,
 }
 
 fn create_timeseries(metric_name: &str, value: f64, timestamp: i64, hostname: &str) -> TimeSeries {
@@ -353,7 +358,7 @@ fn collect_disk_io_metrics(
     let mut read_bytes_per_sec: u64 = 0;
     let mut written_bytes_per_sec: u64 = 0;
 
-    for (_pid, process) in sys.processes() {
+    for process in sys.processes().values() {
         let disk_usage = process.disk_usage();
         total_read_bytes += disk_usage.total_read_bytes;
         total_written_bytes += disk_usage.total_written_bytes;
@@ -502,11 +507,94 @@ fn collect_temperature_metrics(
     }
 }
 
+fn collect_process_metrics(
+    sys: &System,
+    timestamp: i64,
+    hostname: &str,
+    top_n: usize,
+    timeseries: &mut Vec<TimeSeries>,
+) {
+    // Aggregate CPU and memory by process name
+    let mut cpu_by_name: HashMap<String, f64> = HashMap::new();
+    let mut mem_by_name: HashMap<String, u64> = HashMap::new();
+
+    for process in sys.processes().values() {
+        let name = process.name().to_string_lossy().into_owned();
+        *cpu_by_name.entry(name.clone()).or_default() += process.cpu_usage() as f64;
+        *mem_by_name.entry(name).or_default() += process.memory();
+    }
+
+    // agemon_process_count: Total number of running processes
+    timeseries.push(create_timeseries(
+        "agemon_process_count",
+        sys.processes().len() as f64,
+        timestamp,
+        hostname,
+    ));
+
+    // Top N by CPU
+    let mut cpu_sorted: Vec<_> = cpu_by_name.into_iter().collect();
+    cpu_sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut other_cpu = 0.0;
+    for (i, (name, cpu)) in cpu_sorted.iter().enumerate() {
+        if i < top_n {
+            timeseries.push(create_timeseries_with_labels(
+                "agemon_process_cpu_usage_percent",
+                *cpu,
+                timestamp,
+                hostname,
+                vec![("process", name.as_str())],
+            ));
+        } else {
+            other_cpu += cpu;
+        }
+    }
+    if cpu_sorted.len() > top_n {
+        timeseries.push(create_timeseries_with_labels(
+            "agemon_process_cpu_usage_percent",
+            other_cpu,
+            timestamp,
+            hostname,
+            vec![("process", "other")],
+        ));
+    }
+
+    // Top N by memory
+    let mut mem_sorted: Vec<_> = mem_by_name.into_iter().collect();
+    mem_sorted.sort_by(|a, b| b.1.cmp(&a.1));
+
+    let mut other_mem: u64 = 0;
+    for (i, (name, mem)) in mem_sorted.iter().enumerate() {
+        if i < top_n {
+            timeseries.push(create_timeseries_with_labels(
+                "agemon_process_memory_bytes",
+                *mem as f64,
+                timestamp,
+                hostname,
+                vec![("process", name.as_str())],
+            ));
+        } else {
+            other_mem += mem;
+        }
+    }
+    if mem_sorted.len() > top_n {
+        timeseries.push(create_timeseries_with_labels(
+            "agemon_process_memory_bytes",
+            other_mem as f64,
+            timestamp,
+            hostname,
+            vec![("process", "other")],
+        ));
+    }
+}
+
 fn collect_metrics(
     sys: &mut System,
     disks: &mut Disks,
     networks: &mut Networks,
     components: &mut Components,
+    top_processes: usize,
 ) -> Vec<TimeSeries> {
     let hostname = hostname::get()
         .map(|h| h.to_string_lossy().into_owned())
@@ -523,7 +611,10 @@ fn collect_metrics(
     sys.refresh_processes_specifics(
         sysinfo::ProcessesToUpdate::All,
         true,
-        ProcessRefreshKind::nothing().with_disk_usage(),
+        ProcessRefreshKind::nothing()
+            .with_disk_usage()
+            .with_cpu()
+            .with_memory(),
     );
     disks.refresh(true);
     networks.refresh(true);
@@ -536,6 +627,10 @@ fn collect_metrics(
     collect_network_metrics(networks, timestamp, &hostname, &mut timeseries);
     collect_temperature_metrics(components, timestamp, &hostname, &mut timeseries);
     collect_system_metrics(timestamp, &hostname, &mut timeseries);
+
+    if top_processes > 0 {
+        collect_process_metrics(sys, timestamp, &hostname, top_processes, &mut timeseries);
+    }
 
     timeseries
 }
@@ -587,7 +682,7 @@ fn collect_and_push(
     networks: &mut Networks,
     components: &mut Components,
 ) -> Result<()> {
-    let timeseries = collect_metrics(sys, disks, networks, components);
+    let timeseries = collect_metrics(sys, disks, networks, components, args.top_processes);
     info!("collected {} metrics", timeseries.len());
     push_metrics(client, args, timeseries)?;
     Ok(())
