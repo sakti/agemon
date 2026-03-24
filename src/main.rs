@@ -579,7 +579,7 @@ fn collect_procfs_metrics(timestamp: i64, hostname: &str, timeseries: &mut Vec<T
     }
 
     // PSI (Pressure Stall Information) - cpu, memory, io
-    if let Ok(psi) = procfs::CpuPressure::new() {
+    if let Ok(psi) = procfs::CpuPressure::current() {
         timeseries.push(create_timeseries(
             "agemon_psi_cpu_some_avg10",
             psi.some.avg10,
@@ -606,7 +606,7 @@ fn collect_procfs_metrics(timestamp: i64, hostname: &str, timeseries: &mut Vec<T
         ));
     }
 
-    if let Ok(psi) = procfs::MemoryPressure::new() {
+    if let Ok(psi) = procfs::MemoryPressure::current() {
         for (prefix, record) in [("some", &psi.some), ("full", &psi.full)] {
             timeseries.push(create_timeseries(
                 &format!("agemon_psi_memory_{prefix}_avg10"),
@@ -635,7 +635,7 @@ fn collect_procfs_metrics(timestamp: i64, hostname: &str, timeseries: &mut Vec<T
         }
     }
 
-    if let Ok(psi) = procfs::IoPressure::new() {
+    if let Ok(psi) = procfs::IoPressure::current() {
         for (prefix, record) in [("some", &psi.some), ("full", &psi.full)] {
             timeseries.push(create_timeseries(
                 &format!("agemon_psi_io_{prefix}_avg10"),
@@ -686,66 +686,62 @@ fn collect_procfs_metrics(timestamp: i64, hostname: &str, timeseries: &mut Vec<T
         }
     }
 
-    // SNMP TCP stats - retransmits, segments in/out
+    // SNMP TCP/UDP stats - retransmits, segments in/out
     if let Ok(snmp) = procfs::net::snmp() {
-        if let Some(tcp) = snmp.tcp {
-            timeseries.push(create_timeseries(
-                "agemon_tcp_retrans_segs_total",
-                tcp.retrans_segs as f64,
-                timestamp,
-                hostname,
-            ));
-            timeseries.push(create_timeseries(
-                "agemon_tcp_in_segs_total",
-                tcp.in_segs as f64,
-                timestamp,
-                hostname,
-            ));
-            timeseries.push(create_timeseries(
-                "agemon_tcp_out_segs_total",
-                tcp.out_segs as f64,
-                timestamp,
-                hostname,
-            ));
-            timeseries.push(create_timeseries(
-                "agemon_tcp_active_opens_total",
-                tcp.active_opens as f64,
-                timestamp,
-                hostname,
-            ));
-            timeseries.push(create_timeseries(
-                "agemon_tcp_passive_opens_total",
-                tcp.passive_opens as f64,
-                timestamp,
-                hostname,
-            ));
-            timeseries.push(create_timeseries(
-                "agemon_tcp_curr_estab",
-                tcp.curr_estab as f64,
-                timestamp,
-                hostname,
-            ));
-        }
-        if let Some(udp) = snmp.udp {
-            timeseries.push(create_timeseries(
-                "agemon_udp_in_datagrams_total",
-                udp.in_datagrams as f64,
-                timestamp,
-                hostname,
-            ));
-            timeseries.push(create_timeseries(
-                "agemon_udp_out_datagrams_total",
-                udp.out_datagrams as f64,
-                timestamp,
-                hostname,
-            ));
-            timeseries.push(create_timeseries(
-                "agemon_udp_in_errors_total",
-                udp.in_errors as f64,
-                timestamp,
-                hostname,
-            ));
-        }
+        timeseries.push(create_timeseries(
+            "agemon_tcp_retrans_segs_total",
+            snmp.tcp_retrans_segs as f64,
+            timestamp,
+            hostname,
+        ));
+        timeseries.push(create_timeseries(
+            "agemon_tcp_in_segs_total",
+            snmp.tcp_in_segs as f64,
+            timestamp,
+            hostname,
+        ));
+        timeseries.push(create_timeseries(
+            "agemon_tcp_out_segs_total",
+            snmp.tcp_out_segs as f64,
+            timestamp,
+            hostname,
+        ));
+        timeseries.push(create_timeseries(
+            "agemon_tcp_active_opens_total",
+            snmp.tcp_active_opens as f64,
+            timestamp,
+            hostname,
+        ));
+        timeseries.push(create_timeseries(
+            "agemon_tcp_passive_opens_total",
+            snmp.tcp_passive_opens as f64,
+            timestamp,
+            hostname,
+        ));
+        timeseries.push(create_timeseries(
+            "agemon_tcp_curr_estab",
+            snmp.tcp_curr_estab as f64,
+            timestamp,
+            hostname,
+        ));
+        timeseries.push(create_timeseries(
+            "agemon_udp_in_datagrams_total",
+            snmp.udp_in_datagrams as f64,
+            timestamp,
+            hostname,
+        ));
+        timeseries.push(create_timeseries(
+            "agemon_udp_out_datagrams_total",
+            snmp.udp_out_datagrams as f64,
+            timestamp,
+            hostname,
+        ));
+        timeseries.push(create_timeseries(
+            "agemon_udp_in_errors_total",
+            snmp.udp_in_errors as f64,
+            timestamp,
+            hostname,
+        ));
     }
 
     // Entropy available
