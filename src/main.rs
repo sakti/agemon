@@ -464,6 +464,8 @@ fn collect_system_metrics(timestamp: i64, hostname: &str, timeseries: &mut Vec<T
 
 #[cfg(target_os = "linux")]
 fn collect_procfs_metrics(timestamp: i64, hostname: &str, timeseries: &mut Vec<TimeSeries>) {
+    use procfs::Current;
+
     // TCP connection counts by state
     if let Ok(tcp_entries) = procfs::net::tcp() {
         let mut established: u64 = 0;
