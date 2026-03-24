@@ -464,7 +464,7 @@ fn collect_system_metrics(timestamp: i64, hostname: &str, timeseries: &mut Vec<T
 
 #[cfg(target_os = "linux")]
 fn collect_procfs_metrics(timestamp: i64, hostname: &str, timeseries: &mut Vec<TimeSeries>) {
-    use procfs::Current;
+    use procfs::{Current, CurrentSI};
 
     // TCP connection counts by state
     if let Ok(tcp_entries) = procfs::net::tcp() {
@@ -553,7 +553,7 @@ fn collect_procfs_metrics(timestamp: i64, hostname: &str, timeseries: &mut Vec<T
     }
 
     // Context switches and process forks from /proc/stat
-    if let Ok(kernel_stats) = procfs::KernelStats::new() {
+    if let Ok(kernel_stats) = procfs::KernelStats::current() {
         timeseries.push(create_timeseries(
             "agemon_context_switches_total",
             kernel_stats.ctxt as f64,
@@ -584,19 +584,19 @@ fn collect_procfs_metrics(timestamp: i64, hostname: &str, timeseries: &mut Vec<T
     if let Ok(psi) = procfs::CpuPressure::current() {
         timeseries.push(create_timeseries(
             "agemon_psi_cpu_some_avg10",
-            psi.some.avg10,
+            psi.some.avg10.into(),
             timestamp,
             hostname,
         ));
         timeseries.push(create_timeseries(
             "agemon_psi_cpu_some_avg60",
-            psi.some.avg60,
+            psi.some.avg60.into(),
             timestamp,
             hostname,
         ));
         timeseries.push(create_timeseries(
             "agemon_psi_cpu_some_avg300",
-            psi.some.avg300,
+            psi.some.avg300.into(),
             timestamp,
             hostname,
         ));
@@ -612,19 +612,19 @@ fn collect_procfs_metrics(timestamp: i64, hostname: &str, timeseries: &mut Vec<T
         for (prefix, record) in [("some", &psi.some), ("full", &psi.full)] {
             timeseries.push(create_timeseries(
                 &format!("agemon_psi_memory_{prefix}_avg10"),
-                record.avg10,
+                record.avg10.into(),
                 timestamp,
                 hostname,
             ));
             timeseries.push(create_timeseries(
                 &format!("agemon_psi_memory_{prefix}_avg60"),
-                record.avg60,
+                record.avg60.into(),
                 timestamp,
                 hostname,
             ));
             timeseries.push(create_timeseries(
                 &format!("agemon_psi_memory_{prefix}_avg300"),
-                record.avg300,
+                record.avg300.into(),
                 timestamp,
                 hostname,
             ));
@@ -641,19 +641,19 @@ fn collect_procfs_metrics(timestamp: i64, hostname: &str, timeseries: &mut Vec<T
         for (prefix, record) in [("some", &psi.some), ("full", &psi.full)] {
             timeseries.push(create_timeseries(
                 &format!("agemon_psi_io_{prefix}_avg10"),
-                record.avg10,
+                record.avg10.into(),
                 timestamp,
                 hostname,
             ));
             timeseries.push(create_timeseries(
                 &format!("agemon_psi_io_{prefix}_avg60"),
-                record.avg60,
+                record.avg60.into(),
                 timestamp,
                 hostname,
             ));
             timeseries.push(create_timeseries(
                 &format!("agemon_psi_io_{prefix}_avg300"),
-                record.avg300,
+                record.avg300.into(),
                 timestamp,
                 hostname,
             ));
