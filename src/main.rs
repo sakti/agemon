@@ -462,6 +462,303 @@ fn collect_system_metrics(timestamp: i64, hostname: &str, timeseries: &mut Vec<T
     ));
 }
 
+#[cfg(target_os = "linux")]
+fn collect_procfs_metrics(timestamp: i64, hostname: &str, timeseries: &mut Vec<TimeSeries>) {
+    // TCP connection counts by state
+    if let Ok(tcp_entries) = procfs::net::tcp() {
+        let mut established: u64 = 0;
+        let mut listen: u64 = 0;
+        let mut time_wait: u64 = 0;
+        let mut close_wait: u64 = 0;
+        let mut other: u64 = 0;
+
+        for entry in &tcp_entries {
+            match entry.state {
+                procfs::net::TcpState::Established => established += 1,
+                procfs::net::TcpState::Listen => listen += 1,
+                procfs::net::TcpState::TimeWait => time_wait += 1,
+                procfs::net::TcpState::CloseWait => close_wait += 1,
+                _ => other += 1,
+            }
+        }
+
+        for (state, count) in [
+            ("established", established),
+            ("listen", listen),
+            ("time_wait", time_wait),
+            ("close_wait", close_wait),
+            ("other", other),
+        ] {
+            timeseries.push(create_timeseries_with_labels(
+                "agemon_tcp_connections",
+                count as f64,
+                timestamp,
+                hostname,
+                vec![("state", state)],
+            ));
+        }
+    }
+
+    // TCP6 connection counts by state
+    if let Ok(tcp6_entries) = procfs::net::tcp6() {
+        let mut established: u64 = 0;
+        let mut listen: u64 = 0;
+        let mut time_wait: u64 = 0;
+        let mut close_wait: u64 = 0;
+        let mut other: u64 = 0;
+
+        for entry in &tcp6_entries {
+            match entry.state {
+                procfs::net::TcpState::Established => established += 1,
+                procfs::net::TcpState::Listen => listen += 1,
+                procfs::net::TcpState::TimeWait => time_wait += 1,
+                procfs::net::TcpState::CloseWait => close_wait += 1,
+                _ => other += 1,
+            }
+        }
+
+        for (state, count) in [
+            ("established", established),
+            ("listen", listen),
+            ("time_wait", time_wait),
+            ("close_wait", close_wait),
+            ("other", other),
+        ] {
+            timeseries.push(create_timeseries_with_labels(
+                "agemon_tcp6_connections",
+                count as f64,
+                timestamp,
+                hostname,
+                vec![("state", state)],
+            ));
+        }
+    }
+
+    // System-wide file descriptor usage
+    if let Ok(file_state) = procfs::sys::fs::file_nr() {
+        timeseries.push(create_timeseries(
+            "agemon_file_descriptors_allocated",
+            file_state.allocated as f64,
+            timestamp,
+            hostname,
+        ));
+        timeseries.push(create_timeseries(
+            "agemon_file_descriptors_max",
+            file_state.max as f64,
+            timestamp,
+            hostname,
+        ));
+    }
+
+    // Context switches and process forks from /proc/stat
+    if let Ok(kernel_stats) = procfs::KernelStats::new() {
+        timeseries.push(create_timeseries(
+            "agemon_context_switches_total",
+            kernel_stats.ctxt as f64,
+            timestamp,
+            hostname,
+        ));
+        timeseries.push(create_timeseries(
+            "agemon_processes_forked_total",
+            kernel_stats.processes as f64,
+            timestamp,
+            hostname,
+        ));
+        timeseries.push(create_timeseries(
+            "agemon_procs_running",
+            kernel_stats.procs_running.unwrap_or(0) as f64,
+            timestamp,
+            hostname,
+        ));
+        timeseries.push(create_timeseries(
+            "agemon_procs_blocked",
+            kernel_stats.procs_blocked.unwrap_or(0) as f64,
+            timestamp,
+            hostname,
+        ));
+    }
+
+    // PSI (Pressure Stall Information) - cpu, memory, io
+    if let Ok(psi) = procfs::CpuPressure::new() {
+        timeseries.push(create_timeseries(
+            "agemon_psi_cpu_some_avg10",
+            psi.some.avg10,
+            timestamp,
+            hostname,
+        ));
+        timeseries.push(create_timeseries(
+            "agemon_psi_cpu_some_avg60",
+            psi.some.avg60,
+            timestamp,
+            hostname,
+        ));
+        timeseries.push(create_timeseries(
+            "agemon_psi_cpu_some_avg300",
+            psi.some.avg300,
+            timestamp,
+            hostname,
+        ));
+        timeseries.push(create_timeseries(
+            "agemon_psi_cpu_some_total_us",
+            psi.some.total as f64,
+            timestamp,
+            hostname,
+        ));
+    }
+
+    if let Ok(psi) = procfs::MemoryPressure::new() {
+        for (prefix, record) in [("some", &psi.some), ("full", &psi.full)] {
+            timeseries.push(create_timeseries(
+                &format!("agemon_psi_memory_{prefix}_avg10"),
+                record.avg10,
+                timestamp,
+                hostname,
+            ));
+            timeseries.push(create_timeseries(
+                &format!("agemon_psi_memory_{prefix}_avg60"),
+                record.avg60,
+                timestamp,
+                hostname,
+            ));
+            timeseries.push(create_timeseries(
+                &format!("agemon_psi_memory_{prefix}_avg300"),
+                record.avg300,
+                timestamp,
+                hostname,
+            ));
+            timeseries.push(create_timeseries(
+                &format!("agemon_psi_memory_{prefix}_total_us"),
+                record.total as f64,
+                timestamp,
+                hostname,
+            ));
+        }
+    }
+
+    if let Ok(psi) = procfs::IoPressure::new() {
+        for (prefix, record) in [("some", &psi.some), ("full", &psi.full)] {
+            timeseries.push(create_timeseries(
+                &format!("agemon_psi_io_{prefix}_avg10"),
+                record.avg10,
+                timestamp,
+                hostname,
+            ));
+            timeseries.push(create_timeseries(
+                &format!("agemon_psi_io_{prefix}_avg60"),
+                record.avg60,
+                timestamp,
+                hostname,
+            ));
+            timeseries.push(create_timeseries(
+                &format!("agemon_psi_io_{prefix}_avg300"),
+                record.avg300,
+                timestamp,
+                hostname,
+            ));
+            timeseries.push(create_timeseries(
+                &format!("agemon_psi_io_{prefix}_total_us"),
+                record.total as f64,
+                timestamp,
+                hostname,
+            ));
+        }
+    }
+
+    // Vmstat - page faults, swap activity, OOM kills
+    if let Ok(vmstat) = procfs::vmstat() {
+        for (key, metric_name) in [
+            ("pgfault", "agemon_vmstat_pgfault_total"),
+            ("pgmajfault", "agemon_vmstat_pgmajfault_total"),
+            ("pgpgin", "agemon_vmstat_pgpgin_total"),
+            ("pgpgout", "agemon_vmstat_pgpgout_total"),
+            ("pswpin", "agemon_vmstat_pswpin_total"),
+            ("pswpout", "agemon_vmstat_pswpout_total"),
+            ("oom_kill", "agemon_vmstat_oom_kill_total"),
+        ] {
+            if let Some(&value) = vmstat.get(key) {
+                timeseries.push(create_timeseries(
+                    metric_name,
+                    value as f64,
+                    timestamp,
+                    hostname,
+                ));
+            }
+        }
+    }
+
+    // SNMP TCP stats - retransmits, segments in/out
+    if let Ok(snmp) = procfs::net::snmp() {
+        if let Some(tcp) = snmp.tcp {
+            timeseries.push(create_timeseries(
+                "agemon_tcp_retrans_segs_total",
+                tcp.retrans_segs as f64,
+                timestamp,
+                hostname,
+            ));
+            timeseries.push(create_timeseries(
+                "agemon_tcp_in_segs_total",
+                tcp.in_segs as f64,
+                timestamp,
+                hostname,
+            ));
+            timeseries.push(create_timeseries(
+                "agemon_tcp_out_segs_total",
+                tcp.out_segs as f64,
+                timestamp,
+                hostname,
+            ));
+            timeseries.push(create_timeseries(
+                "agemon_tcp_active_opens_total",
+                tcp.active_opens as f64,
+                timestamp,
+                hostname,
+            ));
+            timeseries.push(create_timeseries(
+                "agemon_tcp_passive_opens_total",
+                tcp.passive_opens as f64,
+                timestamp,
+                hostname,
+            ));
+            timeseries.push(create_timeseries(
+                "agemon_tcp_curr_estab",
+                tcp.curr_estab as f64,
+                timestamp,
+                hostname,
+            ));
+        }
+        if let Some(udp) = snmp.udp {
+            timeseries.push(create_timeseries(
+                "agemon_udp_in_datagrams_total",
+                udp.in_datagrams as f64,
+                timestamp,
+                hostname,
+            ));
+            timeseries.push(create_timeseries(
+                "agemon_udp_out_datagrams_total",
+                udp.out_datagrams as f64,
+                timestamp,
+                hostname,
+            ));
+            timeseries.push(create_timeseries(
+                "agemon_udp_in_errors_total",
+                udp.in_errors as f64,
+                timestamp,
+                hostname,
+            ));
+        }
+    }
+
+    // Entropy available
+    if let Ok(entropy) = procfs::sys::kernel::random::entropy_avail() {
+        timeseries.push(create_timeseries(
+            "agemon_entropy_available",
+            entropy as f64,
+            timestamp,
+            hostname,
+        ));
+    }
+}
+
 fn collect_temperature_metrics(
     components: &Components,
     timestamp: i64,
@@ -632,6 +929,8 @@ fn collect_metrics(
     collect_network_metrics(networks, timestamp, &hostname, &mut timeseries);
     collect_temperature_metrics(components, timestamp, &hostname, &mut timeseries);
     collect_system_metrics(timestamp, &hostname, &mut timeseries);
+    #[cfg(target_os = "linux")]
+    collect_procfs_metrics(timestamp, &hostname, &mut timeseries);
 
     if top_processes > 0 {
         collect_process_metrics(sys, timestamp, &hostname, top_processes, &mut timeseries);
