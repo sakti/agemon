@@ -9,7 +9,7 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use clap::Parser;
 use miette::{IntoDiagnostic, Result, miette};
 use prometheus_remote_write::{LABEL_NAME, Label, Sample, TimeSeries, WriteRequest};
-use reqwest::blocking::Client;
+use reqwest::{Url, blocking::Client};
 use sysinfo::{Components, Disks, MemoryRefreshKind, Networks, ProcessRefreshKind, System};
 use tracing::{debug, error, info};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
@@ -895,9 +895,7 @@ fn collect_metrics(
     components: &mut Components,
     top_processes: usize,
 ) -> Vec<TimeSeries> {
-    let hostname = hostname::get()
-        .map(|h| h.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| "unknown".to_string());
+    let hostname = System::host_name().unwrap_or_else(|| "unknown".to_string());
 
     let timestamp: i64 = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -944,7 +942,7 @@ fn push_metrics(client: &Client, args: &Args, timeseries: Vec<TimeSeries>) -> Re
         .build_http_request(
             &args
                 .remote_write_url
-                .parse::<url::Url>()
+                .parse::<Url>()
                 .into_diagnostic()?,
             USER_AGENT,
         )
