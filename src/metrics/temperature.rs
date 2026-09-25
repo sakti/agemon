@@ -7,15 +7,15 @@ pub fn collect(components: &Components, sink: &mut MetricSink) {
         let labels = [("sensor", component.label())];
 
         if let Some(temp) = component.temperature() {
-            sink.gauge_with("agemon_temperature_celsius", temp as f64, &labels);
+            sink.record_with("agemon_temperature_celsius", temp as f64, &labels);
         }
 
         if let Some(max) = component.max() {
-            sink.gauge_with("agemon_temperature_max_celsius", max as f64, &labels);
+            sink.record_with("agemon_temperature_max_celsius", max as f64, &labels);
         }
 
         if let Some(critical) = component.critical() {
-            sink.gauge_with(
+            sink.record_with(
                 "agemon_temperature_critical_celsius",
                 critical as f64,
                 &labels,

@@ -6,32 +6,32 @@ pub fn collect(networks: &Networks, sink: &mut MetricSink) {
     for (interface_name, data) in networks.list() {
         let labels = [("interface", interface_name.as_str())];
 
-        sink.gauge_with(
+        sink.record_with(
             "agemon_network_received_bytes_total",
             data.total_received() as f64,
             &labels,
         );
-        sink.gauge_with(
+        sink.record_with(
             "agemon_network_transmitted_bytes_total",
             data.total_transmitted() as f64,
             &labels,
         );
-        sink.gauge_with(
+        sink.record_with(
             "agemon_network_received_packets_total",
             data.total_packets_received() as f64,
             &labels,
         );
-        sink.gauge_with(
+        sink.record_with(
             "agemon_network_transmitted_packets_total",
             data.total_packets_transmitted() as f64,
             &labels,
         );
-        sink.gauge_with(
+        sink.record_with(
             "agemon_network_received_errors_total",
             data.total_errors_on_received() as f64,
             &labels,
         );
-        sink.gauge_with(
+        sink.record_with(
             "agemon_network_transmitted_errors_total",
             data.total_errors_on_transmitted() as f64,
             &labels,

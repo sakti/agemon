@@ -111,6 +111,8 @@ agemon [OPTIONS]
 | `-r, --remote-write-url` | `AGEMON_REMOTE_WRITE_URL` | Prometheus remote write endpoint URL | `http://localhost:9090/api/v1/write` |
 | `-u, --username` | `AGEMON_REMOTE_WRITE_USERNAME` | Username for Basic authentication (optional) | - |
 | `-p, --password` | `AGEMON_REMOTE_WRITE_PASSWORD` | Password for Basic authentication (optional) | - |
+| `-t, --top-processes` | `AGEMON_TOP_PROCESSES` | Number of top processes to report by CPU and memory (`0` disables) | `10` |
+| `--hostname` | `AGEMON_HOSTNAME` | Value of the `hostname` label | system hostname |
 
 ### Examples
 
@@ -135,6 +137,32 @@ export AGEMON_REMOTE_WRITE_PASSWORD=mypass
 agemon -i 30
 ```
 
+## Docker
+
+On Linux, the flake builds a static (musl) Docker image:
+
+```bash
+nix build .#docker
+docker load < result
+```
+
+A container sees only its own namespaces. To monitor the host, share the host namespaces
+and set the hostname label:
+
+```bash
+docker run -d --name agemon \
+  --pid=host --net=host --uts=host \
+  -e AGEMON_REMOTE_WRITE_URL=https://prometheus.example.com/api/v1/write \
+  -e AGEMON_HOSTNAME="$(hostname)" \
+  agemon:latest
+```
+
+- `--pid=host` shows the host processes (process metrics).
+- `--net=host` shows the host network interfaces, TCP/UDP connections and SNMP counters.
+- `--uts=host` gives the host hostname. You can also set `AGEMON_HOSTNAME`.
+- Disk metrics show the mounts that the container can see. Bind-mount the host
+  filesystems (read-only) if you need them.
+
 ## Home Manager Module
 
 Add to your flake inputs:
@@ -157,6 +185,7 @@ Then enable the service:
     remoteWriteUrl = "https://prometheus.example.com/api/v1/write";
     username = "myuser";
     passwordFile = "/run/secrets/agemon-password";
+    # hostname = "my-host"; # optional, default is the system hostname
   };
 }
 ```

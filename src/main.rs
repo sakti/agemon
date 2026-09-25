@@ -42,6 +42,10 @@ pub struct Args {
     /// Number of top processes to report by CPU and memory (0 to disable)
     #[arg(short = 't', long, env = "AGEMON_TOP_PROCESSES", default_value_t = 10)]
     top_processes: usize,
+
+    /// Value of the `hostname` label (default: the system hostname, read on each collection)
+    #[arg(long, env = "AGEMON_HOSTNAME")]
+    hostname: Option<String>,
 }
 
 fn execute_at_interval<F>(mut task: F, interval_secs: u64) -> Result<()>
@@ -72,7 +76,6 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let hostname = System::host_name().unwrap_or_else(|| "unknown".to_string());
     let mut sources = SystemSources::new();
     let client = PushClient::new(
         &args.remote_write_url,
@@ -84,6 +87,11 @@ fn main() -> Result<()> {
 
     execute_at_interval(
         || {
+            let hostname = args
+                .hostname
+                .clone()
+                .or_else(System::host_name)
+                .unwrap_or_else(|| "unknown".to_string());
             let timeseries = metrics::collect_metrics(&mut sources, &hostname, args.top_processes);
             info!("collected {} metrics", timeseries.len());
             client.push(timeseries)

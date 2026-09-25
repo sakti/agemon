@@ -28,11 +28,11 @@ impl<'a> MetricSink<'a> {
         }
     }
 
-    pub fn gauge(&mut self, name: &str, value: f64) {
-        self.gauge_with(name, value, &[]);
+    pub fn record(&mut self, name: &str, value: f64) {
+        self.record_with(name, value, &[]);
     }
 
-    pub fn gauge_with(&mut self, name: &str, value: f64, extra: &[(&str, &str)]) {
+    pub fn record_with(&mut self, name: &str, value: f64, extra: &[(&str, &str)]) {
         let mut labels = Vec::with_capacity(2 + extra.len());
         labels.push(Label {
             name: "hostname".to_string(),
@@ -160,9 +160,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_gauge_adds_name_and_hostname_labels() {
+    fn test_record_adds_name_and_hostname_labels() {
         let mut sink = MetricSink::new(1000, "testhost");
-        sink.gauge("agemon_test_metric", 42.0);
+        sink.record("agemon_test_metric", 42.0);
         let series = sink.into_series();
 
         assert_eq!(series.len(), 1);
@@ -176,9 +176,9 @@ mod tests {
     }
 
     #[test]
-    fn test_gauge_with_extra_labels() {
+    fn test_record_with_extra_labels() {
         let mut sink = MetricSink::new(2000, "testhost");
-        sink.gauge_with(
+        sink.record_with(
             "agemon_test_metric",
             99.5,
             &[("env", "prod"), ("region", "us-east")],
@@ -195,9 +195,9 @@ mod tests {
     }
 
     #[test]
-    fn test_gauge_with_empty_extra_labels() {
+    fn test_record_with_empty_extra_labels() {
         let mut sink = MetricSink::new(1000, "host");
-        sink.gauge_with("agemon_test", 1.0, &[]);
+        sink.record_with("agemon_test", 1.0, &[]);
         let series = sink.into_series();
         assert_eq!(series[0].labels.len(), 2);
     }

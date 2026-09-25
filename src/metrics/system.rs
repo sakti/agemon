@@ -3,23 +3,23 @@ use sysinfo::System;
 use super::MetricSink;
 
 pub fn collect(sink: &mut MetricSink) {
-    sink.gauge("agemon_system_uptime_seconds", System::uptime() as f64);
-    sink.gauge(
+    sink.record("agemon_system_uptime_seconds", System::uptime() as f64);
+    sink.record(
         "agemon_system_boot_time_seconds",
         System::boot_time() as f64,
     );
 
     let load_avg = System::load_average();
-    sink.gauge("agemon_load_average_1m", load_avg.one);
-    sink.gauge("agemon_load_average_5m", load_avg.five);
-    sink.gauge("agemon_load_average_15m", load_avg.fifteen);
+    sink.record("agemon_load_average_1m", load_avg.one);
+    sink.record("agemon_load_average_5m", load_avg.five);
+    sink.record("agemon_load_average_15m", load_avg.fifteen);
 
     let os_name = System::name().unwrap_or_else(|| "unknown".to_string());
     let os_version = System::os_version().unwrap_or_else(|| "unknown".to_string());
     let kernel_version = System::kernel_version().unwrap_or_else(|| "unknown".to_string());
     let arch = System::cpu_arch();
 
-    sink.gauge_with(
+    sink.record_with(
         "agemon_info",
         1.0,
         &[

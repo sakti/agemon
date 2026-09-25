@@ -14,28 +14,28 @@ pub fn collect(disks: &Disks, sink: &mut MetricSink) {
             ("fs_type", fs_type.as_str()),
         ];
 
-        sink.gauge_with(
+        sink.record_with(
             "agemon_disk_total_bytes",
             disk.total_space() as f64,
             &labels,
         );
-        sink.gauge_with(
+        sink.record_with(
             "agemon_disk_available_bytes",
             disk.available_space() as f64,
             &labels,
         );
 
         let used = disk.total_space().saturating_sub(disk.available_space());
-        sink.gauge_with("agemon_disk_used_bytes", used as f64, &labels);
+        sink.record_with("agemon_disk_used_bytes", used as f64, &labels);
 
         let usage_ratio = if disk.total_space() > 0 {
             used as f64 / disk.total_space() as f64
         } else {
             0.0
         };
-        sink.gauge_with("agemon_disk_usage_ratio", usage_ratio, &labels);
+        sink.record_with("agemon_disk_usage_ratio", usage_ratio, &labels);
 
-        sink.gauge_with(
+        sink.record_with(
             "agemon_disk_is_removable",
             if disk.is_removable() { 1.0 } else { 0.0 },
             &labels,
@@ -57,16 +57,16 @@ pub fn collect_io(sys: &System, sink: &mut MetricSink) {
         written_bytes_per_sec += disk_usage.written_bytes;
     }
 
-    sink.gauge("agemon_disk_io_read_bytes_total", total_read_bytes as f64);
-    sink.gauge(
+    sink.record("agemon_disk_io_read_bytes_total", total_read_bytes as f64);
+    sink.record(
         "agemon_disk_io_written_bytes_total",
         total_written_bytes as f64,
     );
-    sink.gauge(
+    sink.record(
         "agemon_disk_io_read_bytes_per_sec",
         read_bytes_per_sec as f64,
     );
-    sink.gauge(
+    sink.record(
         "agemon_disk_io_written_bytes_per_sec",
         written_bytes_per_sec as f64,
     );

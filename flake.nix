@@ -154,6 +154,12 @@
             default = 10;
             description = "Number of top processes to report by CPU and memory (0 to disable).";
           };
+
+          hostname = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = null;
+            description = "Value of the hostname label. Default is the system hostname.";
+          };
         };
 
         config = lib.mkIf cfg.enable {
@@ -181,6 +187,10 @@
                   ++ lib.optionals (cfg.username != null) [
                     "--username"
                     cfg.username
+                  ]
+                  ++ lib.optionals (cfg.hostname != null) [
+                    "--hostname"
+                    cfg.hostname
                   ];
               in "${cfg.package}/bin/agemon ${lib.escapeShellArgs args}";
               Restart = "on-failure";

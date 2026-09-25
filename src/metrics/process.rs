@@ -18,7 +18,7 @@ pub fn collect(sys: &System, top_n: usize, sink: &mut MetricSink) {
         }
     }
 
-    sink.gauge("agemon_process_count", sys.processes().len() as f64);
+    sink.record("agemon_process_count", sys.processes().len() as f64);
 
     // Top N by CPU
     let mut cpu_sorted: Vec<_> = cpu_by_name.into_iter().collect();
@@ -27,7 +27,7 @@ pub fn collect(sys: &System, top_n: usize, sink: &mut MetricSink) {
     let mut other_cpu = 0.0;
     for (i, (name, cpu)) in cpu_sorted.iter().enumerate() {
         if i < top_n {
-            sink.gauge_with(
+            sink.record_with(
                 "agemon_process_cpu_usage_percent",
                 *cpu,
                 &[("process", name.as_str())],
@@ -37,7 +37,7 @@ pub fn collect(sys: &System, top_n: usize, sink: &mut MetricSink) {
         }
     }
     if cpu_sorted.len() > top_n {
-        sink.gauge_with(
+        sink.record_with(
             "agemon_process_cpu_usage_percent",
             other_cpu,
             &[("process", "other")],
@@ -51,7 +51,7 @@ pub fn collect(sys: &System, top_n: usize, sink: &mut MetricSink) {
     let mut other_mem: u64 = 0;
     for (i, (name, mem)) in mem_sorted.iter().enumerate() {
         if i < top_n {
-            sink.gauge_with(
+            sink.record_with(
                 "agemon_process_memory_bytes",
                 *mem as f64,
                 &[("process", name.as_str())],
@@ -61,7 +61,7 @@ pub fn collect(sys: &System, top_n: usize, sink: &mut MetricSink) {
         }
     }
     if mem_sorted.len() > top_n {
-        sink.gauge_with(
+        sink.record_with(
             "agemon_process_memory_bytes",
             other_mem as f64,
             &[("process", "other")],

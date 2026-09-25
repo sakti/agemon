@@ -41,7 +41,7 @@ fn collect_tcp_connections(sink: &mut MetricSink) {
                 ("close_wait", close_wait),
                 ("other", other),
             ] {
-                sink.gauge_with(metric_name, count as f64, &[("state", state)]);
+                sink.record_with(metric_name, count as f64, &[("state", state)]);
             }
         }
     }
@@ -49,26 +49,26 @@ fn collect_tcp_connections(sink: &mut MetricSink) {
 
 fn collect_file_descriptors(sink: &mut MetricSink) {
     if let Ok(file_state) = procfs::sys::fs::file_nr() {
-        sink.gauge(
+        sink.record(
             "agemon_file_descriptors_allocated",
             file_state.allocated as f64,
         );
-        sink.gauge("agemon_file_descriptors_max", file_state.max as f64);
+        sink.record("agemon_file_descriptors_max", file_state.max as f64);
     }
 }
 
 fn collect_kernel_stats(sink: &mut MetricSink) {
     if let Ok(kernel_stats) = procfs::KernelStats::current() {
-        sink.gauge("agemon_context_switches_total", kernel_stats.ctxt as f64);
-        sink.gauge(
+        sink.record("agemon_context_switches_total", kernel_stats.ctxt as f64);
+        sink.record(
             "agemon_processes_forked_total",
             kernel_stats.processes as f64,
         );
-        sink.gauge(
+        sink.record(
             "agemon_procs_running",
             kernel_stats.procs_running.unwrap_or(0) as f64,
         );
-        sink.gauge(
+        sink.record(
             "agemon_procs_blocked",
             kernel_stats.procs_blocked.unwrap_or(0) as f64,
         );
@@ -77,27 +77,27 @@ fn collect_kernel_stats(sink: &mut MetricSink) {
 
 fn collect_psi(sink: &mut MetricSink) {
     if let Ok(psi) = procfs::CpuPressure::current() {
-        sink.gauge("agemon_psi_cpu_some_avg10", psi.some.avg10.into());
-        sink.gauge("agemon_psi_cpu_some_avg60", psi.some.avg60.into());
-        sink.gauge("agemon_psi_cpu_some_avg300", psi.some.avg300.into());
-        sink.gauge("agemon_psi_cpu_some_total_us", psi.some.total as f64);
+        sink.record("agemon_psi_cpu_some_avg10", psi.some.avg10.into());
+        sink.record("agemon_psi_cpu_some_avg60", psi.some.avg60.into());
+        sink.record("agemon_psi_cpu_some_avg300", psi.some.avg300.into());
+        sink.record("agemon_psi_cpu_some_total_us", psi.some.total as f64);
     }
 
     if let Ok(psi) = procfs::MemoryPressure::current() {
         for (prefix, record) in [("some", &psi.some), ("full", &psi.full)] {
-            sink.gauge(
+            sink.record(
                 &format!("agemon_psi_memory_{prefix}_avg10"),
                 record.avg10.into(),
             );
-            sink.gauge(
+            sink.record(
                 &format!("agemon_psi_memory_{prefix}_avg60"),
                 record.avg60.into(),
             );
-            sink.gauge(
+            sink.record(
                 &format!("agemon_psi_memory_{prefix}_avg300"),
                 record.avg300.into(),
             );
-            sink.gauge(
+            sink.record(
                 &format!("agemon_psi_memory_{prefix}_total_us"),
                 record.total as f64,
             );
@@ -106,19 +106,19 @@ fn collect_psi(sink: &mut MetricSink) {
 
     if let Ok(psi) = procfs::IoPressure::current() {
         for (prefix, record) in [("some", &psi.some), ("full", &psi.full)] {
-            sink.gauge(
+            sink.record(
                 &format!("agemon_psi_io_{prefix}_avg10"),
                 record.avg10.into(),
             );
-            sink.gauge(
+            sink.record(
                 &format!("agemon_psi_io_{prefix}_avg60"),
                 record.avg60.into(),
             );
-            sink.gauge(
+            sink.record(
                 &format!("agemon_psi_io_{prefix}_avg300"),
                 record.avg300.into(),
             );
-            sink.gauge(
+            sink.record(
                 &format!("agemon_psi_io_{prefix}_total_us"),
                 record.total as f64,
             );
@@ -138,7 +138,7 @@ fn collect_vmstat(sink: &mut MetricSink) {
             ("oom_kill", "agemon_vmstat_oom_kill_total"),
         ] {
             if let Some(&value) = vmstat.get(key) {
-                sink.gauge(metric_name, value as f64);
+                sink.record(metric_name, value as f64);
             }
         }
     }
@@ -146,35 +146,35 @@ fn collect_vmstat(sink: &mut MetricSink) {
 
 fn collect_snmp(sink: &mut MetricSink) {
     if let Ok(snmp) = procfs::net::snmp() {
-        sink.gauge(
+        sink.record(
             "agemon_tcp_retrans_segs_total",
             snmp.tcp_retrans_segs as f64,
         );
-        sink.gauge("agemon_tcp_in_segs_total", snmp.tcp_in_segs as f64);
-        sink.gauge("agemon_tcp_out_segs_total", snmp.tcp_out_segs as f64);
-        sink.gauge(
+        sink.record("agemon_tcp_in_segs_total", snmp.tcp_in_segs as f64);
+        sink.record("agemon_tcp_out_segs_total", snmp.tcp_out_segs as f64);
+        sink.record(
             "agemon_tcp_active_opens_total",
             snmp.tcp_active_opens as f64,
         );
-        sink.gauge(
+        sink.record(
             "agemon_tcp_passive_opens_total",
             snmp.tcp_passive_opens as f64,
         );
-        sink.gauge("agemon_tcp_curr_estab", snmp.tcp_curr_estab as f64);
-        sink.gauge(
+        sink.record("agemon_tcp_curr_estab", snmp.tcp_curr_estab as f64);
+        sink.record(
             "agemon_udp_in_datagrams_total",
             snmp.udp_in_datagrams as f64,
         );
-        sink.gauge(
+        sink.record(
             "agemon_udp_out_datagrams_total",
             snmp.udp_out_datagrams as f64,
         );
-        sink.gauge("agemon_udp_in_errors_total", snmp.udp_in_errors as f64);
+        sink.record("agemon_udp_in_errors_total", snmp.udp_in_errors as f64);
     }
 }
 
 fn collect_entropy(sink: &mut MetricSink) {
     if let Ok(entropy) = procfs::sys::kernel::random::entropy_avail() {
-        sink.gauge("agemon_entropy_available", entropy as f64);
+        sink.record("agemon_entropy_available", entropy as f64);
     }
 }

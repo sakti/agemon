@@ -3,11 +3,11 @@ use sysinfo::System;
 use super::MetricSink;
 
 pub fn collect(sys: &System, sink: &mut MetricSink) {
-    sink.gauge("agemon_cpu_usage_percent", sys.global_cpu_usage() as f64);
-    sink.gauge("agemon_cpu_count", sys.cpus().len() as f64);
+    sink.record("agemon_cpu_usage_percent", sys.global_cpu_usage() as f64);
+    sink.record("agemon_cpu_count", sys.cpus().len() as f64);
 
     for cpu in sys.cpus() {
-        sink.gauge_with(
+        sink.record_with(
             "agemon_cpu_core_usage_percent",
             cpu.cpu_usage() as f64,
             &[("cpu", cpu.name())],
