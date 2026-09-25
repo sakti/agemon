@@ -11,108 +11,132 @@ mod temperature;
 use prometheus_remote_write::{LABEL_NAME, Label, Sample, TimeSeries};
 use sysinfo::{Components, Disks, MemoryRefreshKind, Networks, ProcessRefreshKind, System};
 
-pub fn create_timeseries(
-    metric_name: &str,
-    value: f64,
+/// Accumulates timeseries for one collection cycle, stamping every metric
+/// with the shared timestamp and hostname labels.
+pub struct MetricSink<'a> {
     timestamp: i64,
-    hostname: &str,
-) -> TimeSeries {
-    TimeSeries {
-        labels: vec![
-            Label {
-                name: "hostname".to_string(),
-                value: hostname.to_string(),
-            },
-            Label {
-                name: LABEL_NAME.to_string(),
-                value: metric_name.to_string(),
-            },
-        ],
-        samples: vec![Sample { value, timestamp }],
+    hostname: &'a str,
+    series: Vec<TimeSeries>,
+}
+
+impl<'a> MetricSink<'a> {
+    pub fn new(timestamp: i64, hostname: &'a str) -> Self {
+        Self {
+            timestamp,
+            hostname,
+            series: Vec::new(),
+        }
+    }
+
+    pub fn gauge(&mut self, name: &str, value: f64) {
+        self.gauge_with(name, value, &[]);
+    }
+
+    pub fn gauge_with(&mut self, name: &str, value: f64, extra: &[(&str, &str)]) {
+        let mut labels = Vec::with_capacity(2 + extra.len());
+        labels.push(Label {
+            name: "hostname".to_string(),
+            value: self.hostname.to_string(),
+        });
+        labels.push(Label {
+            name: LABEL_NAME.to_string(),
+            value: name.to_string(),
+        });
+        for (k, v) in extra {
+            labels.push(Label {
+                name: (*k).to_string(),
+                value: (*v).to_string(),
+            });
+        }
+        self.series.push(TimeSeries {
+            labels,
+            samples: vec![Sample {
+                value,
+                timestamp: self.timestamp,
+            }],
+        });
+    }
+
+    pub fn into_series(self) -> Vec<TimeSeries> {
+        self.series
     }
 }
 
-pub fn create_timeseries_with_labels(
-    metric_name: &str,
-    value: f64,
-    timestamp: i64,
-    hostname: &str,
-    extra_labels: Vec<(&str, &str)>,
-) -> TimeSeries {
-    let mut labels = vec![
-        Label {
-            name: "hostname".to_string(),
-            value: hostname.to_string(),
-        },
-        Label {
-            name: LABEL_NAME.to_string(),
-            value: metric_name.to_string(),
-        },
-    ];
-    for (k, v) in extra_labels {
-        labels.push(Label {
-            name: k.to_string(),
-            value: v.to_string(),
-        });
+/// Owns the sysinfo handles and knows how to refresh them between collections.
+pub struct SystemSources {
+    sys: System,
+    disks: Disks,
+    networks: Networks,
+    components: Components,
+}
+
+impl SystemSources {
+    pub fn new() -> Self {
+        Self {
+            sys: System::new_all(),
+            disks: Disks::new_with_refreshed_list(),
+            networks: Networks::new_with_refreshed_list(),
+            components: Components::new_with_refreshed_list(),
+        }
     }
-    TimeSeries {
-        labels,
-        samples: vec![Sample { value, timestamp }],
+
+    fn refresh(&mut self) {
+        self.sys
+            .refresh_memory_specifics(MemoryRefreshKind::everything());
+        self.sys.refresh_cpu_usage();
+        self.sys.refresh_processes_specifics(
+            sysinfo::ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing()
+                .with_disk_usage()
+                .with_cpu()
+                .with_memory(),
+        );
+        self.disks.refresh(true);
+        self.networks.refresh(true);
+        self.components.refresh(true);
+    }
+}
+
+impl Default for SystemSources {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 pub fn collect_metrics(
-    sys: &mut System,
-    disks: &mut Disks,
-    networks: &mut Networks,
-    components: &mut Components,
+    sources: &mut SystemSources,
+    hostname: &str,
     top_processes: usize,
 ) -> Vec<TimeSeries> {
-    let hostname = System::host_name().unwrap_or_else(|| "unknown".to_string());
-
     let timestamp: i64 = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_millis() as i64;
 
-    let mut timeseries = vec![];
+    sources.refresh();
 
-    sys.refresh_memory_specifics(MemoryRefreshKind::everything());
-    sys.refresh_cpu_usage();
-    sys.refresh_processes_specifics(
-        sysinfo::ProcessesToUpdate::All,
-        true,
-        ProcessRefreshKind::nothing()
-            .with_disk_usage()
-            .with_cpu()
-            .with_memory(),
-    );
-    disks.refresh(true);
-    networks.refresh(true);
-    components.refresh(true);
+    let mut sink = MetricSink::new(timestamp, hostname);
 
-    cpu::collect(sys, timestamp, &hostname, &mut timeseries);
-    memory::collect(sys, timestamp, &hostname, &mut timeseries);
-    disk::collect(disks, timestamp, &hostname, &mut timeseries);
-    disk::collect_io(sys, timestamp, &hostname, &mut timeseries);
-    network::collect(networks, timestamp, &hostname, &mut timeseries);
-    temperature::collect(components, timestamp, &hostname, &mut timeseries);
-    system::collect(timestamp, &hostname, &mut timeseries);
+    cpu::collect(&sources.sys, &mut sink);
+    memory::collect(&sources.sys, &mut sink);
+    disk::collect(&sources.disks, &mut sink);
+    disk::collect_io(&sources.sys, &mut sink);
+    network::collect(&sources.networks, &mut sink);
+    temperature::collect(&sources.components, &mut sink);
+    system::collect(&mut sink);
     #[cfg(target_os = "linux")]
-    procfs::collect(timestamp, &hostname, &mut timeseries);
+    procfs::collect(&mut sink);
 
     if top_processes > 0 {
-        process::collect(sys, timestamp, &hostname, top_processes, &mut timeseries);
+        process::collect(&sources.sys, top_processes, &mut sink);
     }
 
-    timeseries
+    sink.into_series()
 }
 
 #[cfg(test)]
-pub fn find_metric<'a>(
-    timeseries: &'a [TimeSeries],
-    name: &str,
-) -> Vec<&'a TimeSeries> {
+pub fn find_metric<'a>(timeseries: &'a [TimeSeries], name: &str) -> Vec<&'a TimeSeries> {
     timeseries
         .iter()
         .filter(|ts| {
@@ -136,60 +160,59 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_create_timeseries() {
-        let ts = create_timeseries("agemon_test_metric", 42.0, 1000, "testhost");
+    fn test_gauge_adds_name_and_hostname_labels() {
+        let mut sink = MetricSink::new(1000, "testhost");
+        sink.gauge("agemon_test_metric", 42.0);
+        let series = sink.into_series();
+
+        assert_eq!(series.len(), 1);
+        let ts = &series[0];
         assert_eq!(ts.labels.len(), 2);
-        assert_eq!(ts.labels[0].name, "hostname");
-        assert_eq!(ts.labels[0].value, "testhost");
-        assert_eq!(ts.labels[1].name, LABEL_NAME);
-        assert_eq!(ts.labels[1].value, "agemon_test_metric");
+        assert_eq!(get_label_value(ts, "hostname"), Some("testhost"));
+        assert_eq!(get_label_value(ts, LABEL_NAME), Some("agemon_test_metric"));
         assert_eq!(ts.samples.len(), 1);
         assert_eq!(ts.samples[0].value, 42.0);
         assert_eq!(ts.samples[0].timestamp, 1000);
     }
 
     #[test]
-    fn test_create_timeseries_with_labels() {
-        let ts = create_timeseries_with_labels(
+    fn test_gauge_with_extra_labels() {
+        let mut sink = MetricSink::new(2000, "testhost");
+        sink.gauge_with(
             "agemon_test_metric",
             99.5,
-            2000,
-            "testhost",
-            vec![("env", "prod"), ("region", "us-east")],
+            &[("env", "prod"), ("region", "us-east")],
         );
+        let series = sink.into_series();
+
+        let ts = &series[0];
         assert_eq!(ts.labels.len(), 4);
-        assert_eq!(get_label_value(&ts, "hostname"), Some("testhost"));
-        assert_eq!(get_label_value(&ts, LABEL_NAME), Some("agemon_test_metric"));
-        assert_eq!(get_label_value(&ts, "env"), Some("prod"));
-        assert_eq!(get_label_value(&ts, "region"), Some("us-east"));
+        assert_eq!(get_label_value(ts, "hostname"), Some("testhost"));
+        assert_eq!(get_label_value(ts, LABEL_NAME), Some("agemon_test_metric"));
+        assert_eq!(get_label_value(ts, "env"), Some("prod"));
+        assert_eq!(get_label_value(ts, "region"), Some("us-east"));
         assert_eq!(ts.samples[0].value, 99.5);
     }
 
     #[test]
-    fn test_create_timeseries_with_empty_extra_labels() {
-        let ts = create_timeseries_with_labels("agemon_test", 1.0, 1000, "host", vec![]);
-        assert_eq!(ts.labels.len(), 2);
+    fn test_gauge_with_empty_extra_labels() {
+        let mut sink = MetricSink::new(1000, "host");
+        sink.gauge_with("agemon_test", 1.0, &[]);
+        let series = sink.into_series();
+        assert_eq!(series[0].labels.len(), 2);
     }
 
     #[test]
     fn test_collect_metrics_returns_nonempty() {
-        let mut sys = System::new_all();
-        let mut disks = Disks::new_with_refreshed_list();
-        let mut networks = Networks::new_with_refreshed_list();
-        let mut components = Components::new_with_refreshed_list();
-
-        let timeseries = collect_metrics(&mut sys, &mut disks, &mut networks, &mut components, 10);
+        let mut sources = SystemSources::new();
+        let timeseries = collect_metrics(&mut sources, "testhost", 10);
         assert!(!timeseries.is_empty());
     }
 
     #[test]
     fn test_collect_metrics_all_have_hostname() {
-        let mut sys = System::new_all();
-        let mut disks = Disks::new_with_refreshed_list();
-        let mut networks = Networks::new_with_refreshed_list();
-        let mut components = Components::new_with_refreshed_list();
-
-        let timeseries = collect_metrics(&mut sys, &mut disks, &mut networks, &mut components, 0);
+        let mut sources = SystemSources::new();
+        let timeseries = collect_metrics(&mut sources, "testhost", 0);
         for ts in &timeseries {
             assert!(
                 ts.labels.iter().any(|l| l.name == "hostname"),
@@ -201,12 +224,8 @@ mod tests {
 
     #[test]
     fn test_collect_metrics_all_have_name() {
-        let mut sys = System::new_all();
-        let mut disks = Disks::new_with_refreshed_list();
-        let mut networks = Networks::new_with_refreshed_list();
-        let mut components = Components::new_with_refreshed_list();
-
-        let timeseries = collect_metrics(&mut sys, &mut disks, &mut networks, &mut components, 0);
+        let mut sources = SystemSources::new();
+        let timeseries = collect_metrics(&mut sources, "testhost", 0);
         for ts in &timeseries {
             assert!(
                 ts.labels.iter().any(|l| l.name == LABEL_NAME),
@@ -218,12 +237,8 @@ mod tests {
 
     #[test]
     fn test_collect_metrics_with_processes_disabled() {
-        let mut sys = System::new_all();
-        let mut disks = Disks::new_with_refreshed_list();
-        let mut networks = Networks::new_with_refreshed_list();
-        let mut components = Components::new_with_refreshed_list();
-
-        let timeseries = collect_metrics(&mut sys, &mut disks, &mut networks, &mut components, 0);
+        let mut sources = SystemSources::new();
+        let timeseries = collect_metrics(&mut sources, "testhost", 0);
         let process_metrics = find_metric(&timeseries, "agemon_process_cpu_usage_percent");
         assert!(process_metrics.is_empty());
     }

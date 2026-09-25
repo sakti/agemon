@@ -1,17 +1,10 @@
 use std::collections::HashMap;
 
-use prometheus_remote_write::TimeSeries;
 use sysinfo::System;
 
-use super::{create_timeseries, create_timeseries_with_labels};
+use super::MetricSink;
 
-pub fn collect(
-    sys: &System,
-    timestamp: i64,
-    hostname: &str,
-    top_n: usize,
-    timeseries: &mut Vec<TimeSeries>,
-) {
+pub fn collect(sys: &System, top_n: usize, sink: &mut MetricSink) {
     let mut cpu_by_name: HashMap<String, f64> = HashMap::new();
     let mut mem_by_name: HashMap<String, u64> = HashMap::new();
 
@@ -25,12 +18,7 @@ pub fn collect(
         }
     }
 
-    timeseries.push(create_timeseries(
-        "agemon_process_count",
-        sys.processes().len() as f64,
-        timestamp,
-        hostname,
-    ));
+    sink.gauge("agemon_process_count", sys.processes().len() as f64);
 
     // Top N by CPU
     let mut cpu_sorted: Vec<_> = cpu_by_name.into_iter().collect();
@@ -39,53 +27,45 @@ pub fn collect(
     let mut other_cpu = 0.0;
     for (i, (name, cpu)) in cpu_sorted.iter().enumerate() {
         if i < top_n {
-            timeseries.push(create_timeseries_with_labels(
+            sink.gauge_with(
                 "agemon_process_cpu_usage_percent",
                 *cpu,
-                timestamp,
-                hostname,
-                vec![("process", name.as_str())],
-            ));
+                &[("process", name.as_str())],
+            );
         } else {
             other_cpu += cpu;
         }
     }
     if cpu_sorted.len() > top_n {
-        timeseries.push(create_timeseries_with_labels(
+        sink.gauge_with(
             "agemon_process_cpu_usage_percent",
             other_cpu,
-            timestamp,
-            hostname,
-            vec![("process", "other")],
-        ));
+            &[("process", "other")],
+        );
     }
 
     // Top N by memory
     let mut mem_sorted: Vec<_> = mem_by_name.into_iter().collect();
-    mem_sorted.sort_by(|a, b| b.1.cmp(&a.1));
+    mem_sorted.sort_by_key(|(_, mem)| std::cmp::Reverse(*mem));
 
     let mut other_mem: u64 = 0;
     for (i, (name, mem)) in mem_sorted.iter().enumerate() {
         if i < top_n {
-            timeseries.push(create_timeseries_with_labels(
+            sink.gauge_with(
                 "agemon_process_memory_bytes",
                 *mem as f64,
-                timestamp,
-                hostname,
-                vec![("process", name.as_str())],
-            ));
+                &[("process", name.as_str())],
+            );
         } else {
             other_mem += mem;
         }
     }
     if mem_sorted.len() > top_n {
-        timeseries.push(create_timeseries_with_labels(
+        sink.gauge_with(
             "agemon_process_memory_bytes",
             other_mem as f64,
-            timestamp,
-            hostname,
-            vec![("process", "other")],
-        ));
+            &[("process", "other")],
+        );
     }
 }
 
@@ -109,8 +89,9 @@ mod tests {
     #[test]
     fn test_collect_produces_process_count() {
         let sys = make_sys();
-        let mut timeseries = vec![];
-        collect(&sys, 1000, "testhost", 5, &mut timeseries);
+        let mut sink = MetricSink::new(1000, "testhost");
+        collect(&sys, 5, &mut sink);
+        let timeseries = sink.into_series();
 
         let count = find_metric(&timeseries, "agemon_process_count");
         assert_eq!(count.len(), 1);
@@ -120,29 +101,40 @@ mod tests {
     #[test]
     fn test_top_n_limits_cpu_metrics() {
         let sys = make_sys();
-        let mut timeseries = vec![];
-        collect(&sys, 1000, "testhost", 3, &mut timeseries);
+        let mut sink = MetricSink::new(1000, "testhost");
+        collect(&sys, 3, &mut sink);
+        let timeseries = sink.into_series();
 
         let cpu_metrics = find_metric(&timeseries, "agemon_process_cpu_usage_percent");
         // At most top_n + 1 (the "other" bucket)
-        assert!(cpu_metrics.len() <= 4, "got {} cpu metrics", cpu_metrics.len());
+        assert!(
+            cpu_metrics.len() <= 4,
+            "got {} cpu metrics",
+            cpu_metrics.len()
+        );
     }
 
     #[test]
     fn test_top_n_limits_memory_metrics() {
         let sys = make_sys();
-        let mut timeseries = vec![];
-        collect(&sys, 1000, "testhost", 3, &mut timeseries);
+        let mut sink = MetricSink::new(1000, "testhost");
+        collect(&sys, 3, &mut sink);
+        let timeseries = sink.into_series();
 
         let mem_metrics = find_metric(&timeseries, "agemon_process_memory_bytes");
-        assert!(mem_metrics.len() <= 4, "got {} mem metrics", mem_metrics.len());
+        assert!(
+            mem_metrics.len() <= 4,
+            "got {} mem metrics",
+            mem_metrics.len()
+        );
     }
 
     #[test]
     fn test_process_metrics_have_process_label() {
         let sys = make_sys();
-        let mut timeseries = vec![];
-        collect(&sys, 1000, "testhost", 5, &mut timeseries);
+        let mut sink = MetricSink::new(1000, "testhost");
+        collect(&sys, 5, &mut sink);
+        let timeseries = sink.into_series();
 
         let cpu_metrics = find_metric(&timeseries, "agemon_process_cpu_usage_percent");
         for ts in cpu_metrics {

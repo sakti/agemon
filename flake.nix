@@ -33,16 +33,11 @@
 
       commonArgs = {
         inherit src;
-        pname = "agemon";
-        version = "0.1.0";
+        inherit (craneLib.crateNameFromCargoToml {inherit src;}) pname version;
 
         buildInputs = pkgs.lib.optionals pkgs.stdenv.isDarwin [
           pkgs.libiconv
           pkgs.apple-sdk_15
-        ];
-
-        nativeBuildInputs = with pkgs; [
-          pkg-config
         ];
       };
 
@@ -53,11 +48,65 @@
           inherit cargoArtifacts;
           doCheck = false;
         });
+
+    mkDockerImage = system: let
+      overlays = [(import rust-overlay)];
+      pkgs = import nixpkgs {inherit system overlays;};
+      muslPkgs = pkgs.pkgsMusl;
+
+      rustTargetTriple =
+        if system == "x86_64-linux"
+        then "x86_64-unknown-linux-musl"
+        else "aarch64-unknown-linux-musl";
+
+      rustToolchain = pkgs.rust-bin.stable.latest.minimal.override {
+        targets = [rustTargetTriple];
+      };
+      craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
+      src = craneLib.cleanCargoSource ./.;
+
+      commonArgs =
+        {
+          inherit src;
+          inherit (craneLib.crateNameFromCargoToml {inherit src;}) pname version;
+          CARGO_BUILD_TARGET = rustTargetTriple;
+          nativeBuildInputs = [muslPkgs.stdenv.cc];
+        }
+        // pkgs.lib.optionalAttrs (system == "x86_64-linux") {
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER = "${muslPkgs.stdenv.cc}/bin/cc";
+        }
+        // pkgs.lib.optionalAttrs (system == "aarch64-linux") {
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER = "${muslPkgs.stdenv.cc}/bin/cc";
+        };
+
+      cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+      staticBin = craneLib.buildPackage (commonArgs
+        // {
+          inherit cargoArtifacts;
+          doCheck = false;
+        });
+    in
+      pkgs.dockerTools.buildLayeredImage {
+        name = "agemon";
+        tag = "latest";
+        maxLayers = 5;
+        contents = [
+          pkgs.dockerTools.caCertificates
+          staticBin
+        ];
+        config = {
+          Entrypoint = ["/bin/agemon"];
+        };
+      };
   in
     {
-      packages = forAllSystems (system: {
-        default = mkPackage system;
-      });
+      packages = forAllSystems (system:
+        {
+          default = mkPackage system;
+        }
+        // nixpkgs.lib.optionalAttrs (nixpkgs.lib.hasSuffix "-linux" system) {
+          docker = mkDockerImage system;
+        });
 
       homeManagerModules.default = {
         config,

@@ -1,46 +1,25 @@
-use prometheus_remote_write::TimeSeries;
 use sysinfo::Components;
 
-use super::create_timeseries_with_labels;
+use super::MetricSink;
 
-pub fn collect(
-    components: &Components,
-    timestamp: i64,
-    hostname: &str,
-    timeseries: &mut Vec<TimeSeries>,
-) {
+pub fn collect(components: &Components, sink: &mut MetricSink) {
     for component in components.list() {
-        let sensor = component.label();
-        let labels = vec![("sensor", sensor)];
+        let labels = [("sensor", component.label())];
 
         if let Some(temp) = component.temperature() {
-            timeseries.push(create_timeseries_with_labels(
-                "agemon_temperature_celsius",
-                temp as f64,
-                timestamp,
-                hostname,
-                labels.clone(),
-            ));
+            sink.gauge_with("agemon_temperature_celsius", temp as f64, &labels);
         }
 
         if let Some(max) = component.max() {
-            timeseries.push(create_timeseries_with_labels(
-                "agemon_temperature_max_celsius",
-                max as f64,
-                timestamp,
-                hostname,
-                labels.clone(),
-            ));
+            sink.gauge_with("agemon_temperature_max_celsius", max as f64, &labels);
         }
 
         if let Some(critical) = component.critical() {
-            timeseries.push(create_timeseries_with_labels(
+            sink.gauge_with(
                 "agemon_temperature_critical_celsius",
                 critical as f64,
-                timestamp,
-                hostname,
-                labels,
-            ));
+                &labels,
+            );
         }
     }
 }
@@ -55,8 +34,9 @@ mod tests {
     #[test]
     fn test_temperature_metrics_have_sensor_label() {
         let components = Components::new_with_refreshed_list();
-        let mut timeseries = vec![];
-        collect(&components, 1000, "testhost", &mut timeseries);
+        let mut sink = MetricSink::new(1000, "testhost");
+        collect(&components, &mut sink);
+        let timeseries = sink.into_series();
 
         for ts in &timeseries {
             assert!(

@@ -1,32 +1,17 @@
-use prometheus_remote_write::TimeSeries;
 use sysinfo::System;
 
-use super::{create_timeseries, create_timeseries_with_labels};
+use super::MetricSink;
 
-pub fn collect(sys: &System, timestamp: i64, hostname: &str, timeseries: &mut Vec<TimeSeries>) {
-    timeseries.push(create_timeseries(
-        "agemon_cpu_usage_percent",
-        sys.global_cpu_usage() as f64,
-        timestamp,
-        hostname,
-    ));
-
-    timeseries.push(create_timeseries(
-        "agemon_cpu_count",
-        sys.cpus().len() as f64,
-        timestamp,
-        hostname,
-    ));
+pub fn collect(sys: &System, sink: &mut MetricSink) {
+    sink.gauge("agemon_cpu_usage_percent", sys.global_cpu_usage() as f64);
+    sink.gauge("agemon_cpu_count", sys.cpus().len() as f64);
 
     for cpu in sys.cpus() {
-        let labels = vec![("cpu", cpu.name())];
-        timeseries.push(create_timeseries_with_labels(
+        sink.gauge_with(
             "agemon_cpu_core_usage_percent",
             cpu.cpu_usage() as f64,
-            timestamp,
-            hostname,
-            labels,
-        ));
+            &[("cpu", cpu.name())],
+        );
     }
 }
 
@@ -40,8 +25,9 @@ mod tests {
     #[test]
     fn test_collect_produces_cpu_metrics() {
         let sys = System::new_all();
-        let mut timeseries = vec![];
-        collect(&sys, 1000, "testhost", &mut timeseries);
+        let mut sink = MetricSink::new(1000, "testhost");
+        collect(&sys, &mut sink);
+        let timeseries = sink.into_series();
 
         let usage = find_metric(&timeseries, "agemon_cpu_usage_percent");
         assert_eq!(usage.len(), 1);
@@ -54,8 +40,9 @@ mod tests {
     #[test]
     fn test_per_core_metrics_have_cpu_label() {
         let sys = System::new_all();
-        let mut timeseries = vec![];
-        collect(&sys, 1000, "testhost", &mut timeseries);
+        let mut sink = MetricSink::new(1000, "testhost");
+        collect(&sys, &mut sink);
+        let timeseries = sink.into_series();
 
         let per_core = find_metric(&timeseries, "agemon_cpu_core_usage_percent");
         assert!(!per_core.is_empty());

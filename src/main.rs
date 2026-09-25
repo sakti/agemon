@@ -7,10 +7,13 @@ use std::{
 };
 
 use clap::Parser;
-use miette::{IntoDiagnostic, Result};
-use sysinfo::{Components, Disks, Networks, System};
+use miette::Result;
+use sysinfo::System;
 use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+
+use metrics::SystemSources;
+use push::PushClient;
 
 const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
@@ -41,20 +44,6 @@ pub struct Args {
     top_processes: usize,
 }
 
-fn collect_and_push(
-    client: &reqwest::blocking::Client,
-    args: &Args,
-    sys: &mut System,
-    disks: &mut Disks,
-    networks: &mut Networks,
-    components: &mut Components,
-) -> Result<()> {
-    let timeseries = metrics::collect_metrics(sys, disks, networks, components, args.top_processes);
-    info!("collected {} metrics", timeseries.len());
-    push::push_metrics(client, args, timeseries)?;
-    Ok(())
-}
-
 fn execute_at_interval<F>(mut task: F, interval_secs: u64) -> Result<()>
 where
     F: FnMut() -> Result<()>,
@@ -82,32 +71,24 @@ fn main() -> Result<()> {
         .init();
 
     let args = Args::parse();
-    let interval = args.interval;
 
-    let mut sys = System::new_all();
-    let mut disks = Disks::new_with_refreshed_list();
-    let mut networks = Networks::new_with_refreshed_list();
-    let mut components = Components::new_with_refreshed_list();
+    let hostname = System::host_name().unwrap_or_else(|| "unknown".to_string());
+    let mut sources = SystemSources::new();
+    let client = PushClient::new(
+        &args.remote_write_url,
+        args.username.as_deref(),
+        args.password.as_deref(),
+    )?;
 
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .into_diagnostic()?;
-
-    info!("starting agemon with interval: {}s", interval);
+    info!("starting agemon with interval: {}s", args.interval);
 
     execute_at_interval(
         || {
-            collect_and_push(
-                &client,
-                &args,
-                &mut sys,
-                &mut disks,
-                &mut networks,
-                &mut components,
-            )
+            let timeseries = metrics::collect_metrics(&mut sources, &hostname, args.top_processes);
+            info!("collected {} metrics", timeseries.len());
+            client.push(timeseries)
         },
-        interval,
+        args.interval,
     )?;
 
     Ok(())

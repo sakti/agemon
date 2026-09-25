@@ -1,64 +1,41 @@
-use prometheus_remote_write::TimeSeries;
 use sysinfo::Networks;
 
-use super::create_timeseries_with_labels;
+use super::MetricSink;
 
-pub fn collect(
-    networks: &Networks,
-    timestamp: i64,
-    hostname: &str,
-    timeseries: &mut Vec<TimeSeries>,
-) {
+pub fn collect(networks: &Networks, sink: &mut MetricSink) {
     for (interface_name, data) in networks.list() {
-        let labels = vec![("interface", interface_name.as_str())];
+        let labels = [("interface", interface_name.as_str())];
 
-        timeseries.push(create_timeseries_with_labels(
+        sink.gauge_with(
             "agemon_network_received_bytes_total",
             data.total_received() as f64,
-            timestamp,
-            hostname,
-            labels.clone(),
-        ));
-
-        timeseries.push(create_timeseries_with_labels(
+            &labels,
+        );
+        sink.gauge_with(
             "agemon_network_transmitted_bytes_total",
             data.total_transmitted() as f64,
-            timestamp,
-            hostname,
-            labels.clone(),
-        ));
-
-        timeseries.push(create_timeseries_with_labels(
+            &labels,
+        );
+        sink.gauge_with(
             "agemon_network_received_packets_total",
             data.total_packets_received() as f64,
-            timestamp,
-            hostname,
-            labels.clone(),
-        ));
-
-        timeseries.push(create_timeseries_with_labels(
+            &labels,
+        );
+        sink.gauge_with(
             "agemon_network_transmitted_packets_total",
             data.total_packets_transmitted() as f64,
-            timestamp,
-            hostname,
-            labels.clone(),
-        ));
-
-        timeseries.push(create_timeseries_with_labels(
+            &labels,
+        );
+        sink.gauge_with(
             "agemon_network_received_errors_total",
             data.total_errors_on_received() as f64,
-            timestamp,
-            hostname,
-            labels.clone(),
-        ));
-
-        timeseries.push(create_timeseries_with_labels(
+            &labels,
+        );
+        sink.gauge_with(
             "agemon_network_transmitted_errors_total",
             data.total_errors_on_transmitted() as f64,
-            timestamp,
-            hostname,
-            labels,
-        ));
+            &labels,
+        );
     }
 }
 
@@ -72,8 +49,9 @@ mod tests {
     #[test]
     fn test_collect_network_metrics_have_interface_label() {
         let networks = Networks::new_with_refreshed_list();
-        let mut timeseries = vec![];
-        collect(&networks, 1000, "testhost", &mut timeseries);
+        let mut sink = MetricSink::new(1000, "testhost");
+        collect(&networks, &mut sink);
+        let timeseries = sink.into_series();
 
         // Every network metric should have an interface label
         for ts in &timeseries {
@@ -87,8 +65,9 @@ mod tests {
     #[test]
     fn test_six_metrics_per_interface() {
         let networks = Networks::new_with_refreshed_list();
-        let mut timeseries = vec![];
-        collect(&networks, 1000, "testhost", &mut timeseries);
+        let mut sink = MetricSink::new(1000, "testhost");
+        collect(&networks, &mut sink);
+        let timeseries = sink.into_series();
 
         let interface_count = networks.list().len();
         if interface_count > 0 {

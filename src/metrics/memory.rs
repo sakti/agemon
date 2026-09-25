@@ -1,81 +1,33 @@
-use prometheus_remote_write::TimeSeries;
 use sysinfo::System;
 
-use super::create_timeseries;
+use super::MetricSink;
 
-pub fn collect(sys: &System, timestamp: i64, hostname: &str, timeseries: &mut Vec<TimeSeries>) {
-    timeseries.push(create_timeseries(
-        "agemon_memory_total_bytes",
-        sys.total_memory() as f64,
-        timestamp,
-        hostname,
-    ));
-
-    timeseries.push(create_timeseries(
-        "agemon_memory_used_bytes",
-        sys.used_memory() as f64,
-        timestamp,
-        hostname,
-    ));
-
-    timeseries.push(create_timeseries(
-        "agemon_memory_free_bytes",
-        sys.free_memory() as f64,
-        timestamp,
-        hostname,
-    ));
-
-    timeseries.push(create_timeseries(
+pub fn collect(sys: &System, sink: &mut MetricSink) {
+    sink.gauge("agemon_memory_total_bytes", sys.total_memory() as f64);
+    sink.gauge("agemon_memory_used_bytes", sys.used_memory() as f64);
+    sink.gauge("agemon_memory_free_bytes", sys.free_memory() as f64);
+    sink.gauge(
         "agemon_memory_available_bytes",
         sys.available_memory() as f64,
-        timestamp,
-        hostname,
-    ));
+    );
 
     let usage_ratio = if sys.total_memory() > 0 {
         sys.used_memory() as f64 / sys.total_memory() as f64
     } else {
         0.0
     };
-    timeseries.push(create_timeseries(
-        "agemon_memory_usage_ratio",
-        usage_ratio,
-        timestamp,
-        hostname,
-    ));
+    sink.gauge("agemon_memory_usage_ratio", usage_ratio);
 
-    timeseries.push(create_timeseries(
-        "agemon_swap_total_bytes",
-        sys.total_swap() as f64,
-        timestamp,
-        hostname,
-    ));
-
-    timeseries.push(create_timeseries(
-        "agemon_swap_used_bytes",
-        sys.used_swap() as f64,
-        timestamp,
-        hostname,
-    ));
-
-    timeseries.push(create_timeseries(
-        "agemon_swap_free_bytes",
-        sys.free_swap() as f64,
-        timestamp,
-        hostname,
-    ));
+    sink.gauge("agemon_swap_total_bytes", sys.total_swap() as f64);
+    sink.gauge("agemon_swap_used_bytes", sys.used_swap() as f64);
+    sink.gauge("agemon_swap_free_bytes", sys.free_swap() as f64);
 
     let swap_ratio = if sys.total_swap() > 0 {
         sys.used_swap() as f64 / sys.total_swap() as f64
     } else {
         0.0
     };
-    timeseries.push(create_timeseries(
-        "agemon_swap_usage_ratio",
-        swap_ratio,
-        timestamp,
-        hostname,
-    ));
+    sink.gauge("agemon_swap_usage_ratio", swap_ratio);
 }
 
 #[cfg(test)]
@@ -89,8 +41,9 @@ mod tests {
     fn test_collect_produces_all_memory_metrics() {
         let mut sys = System::new();
         sys.refresh_memory_specifics(MemoryRefreshKind::everything());
-        let mut timeseries = vec![];
-        collect(&sys, 1000, "testhost", &mut timeseries);
+        let mut sink = MetricSink::new(1000, "testhost");
+        collect(&sys, &mut sink);
+        let timeseries = sink.into_series();
 
         let expected = [
             "agemon_memory_total_bytes",
@@ -113,8 +66,9 @@ mod tests {
     fn test_memory_usage_ratio_bounded() {
         let mut sys = System::new();
         sys.refresh_memory_specifics(MemoryRefreshKind::everything());
-        let mut timeseries = vec![];
-        collect(&sys, 1000, "testhost", &mut timeseries);
+        let mut sink = MetricSink::new(1000, "testhost");
+        collect(&sys, &mut sink);
+        let timeseries = sink.into_series();
 
         let ratio = find_metric(&timeseries, "agemon_memory_usage_ratio");
         let value = ratio[0].samples[0].value;
