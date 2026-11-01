@@ -71,13 +71,13 @@ pub struct SystemSources {
 }
 
 impl SystemSources {
-    pub fn new() -> Self {
-        Self {
-            sys: System::new_all(),
-            disks: Disks::new_with_refreshed_list(),
-            networks: Networks::new_with_refreshed_list(),
-            components: Components::new_with_refreshed_list(),
-        }
+    pub fn new() -> Result<Self, sysinfo::Error> {
+        Ok(Self {
+            sys: System::new_all()?,
+            disks: Disks::new_with_refreshed_list()?,
+            networks: Networks::new_with_refreshed_list()?,
+            components: Components::new_with_refreshed_list()?,
+        })
     }
 
     fn refresh(&mut self) {
@@ -95,12 +95,6 @@ impl SystemSources {
         self.disks.refresh(true);
         self.networks.refresh(true);
         self.components.refresh(true);
-    }
-}
-
-impl Default for SystemSources {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -204,14 +198,14 @@ mod tests {
 
     #[test]
     fn test_collect_metrics_returns_nonempty() {
-        let mut sources = SystemSources::new();
+        let mut sources = SystemSources::new().unwrap();
         let timeseries = collect_metrics(&mut sources, "testhost", 10);
         assert!(!timeseries.is_empty());
     }
 
     #[test]
     fn test_collect_metrics_all_have_hostname() {
-        let mut sources = SystemSources::new();
+        let mut sources = SystemSources::new().unwrap();
         let timeseries = collect_metrics(&mut sources, "testhost", 0);
         for ts in &timeseries {
             assert!(
@@ -224,7 +218,7 @@ mod tests {
 
     #[test]
     fn test_collect_metrics_all_have_name() {
-        let mut sources = SystemSources::new();
+        let mut sources = SystemSources::new().unwrap();
         let timeseries = collect_metrics(&mut sources, "testhost", 0);
         for ts in &timeseries {
             assert!(
@@ -237,7 +231,7 @@ mod tests {
 
     #[test]
     fn test_collect_metrics_with_processes_disabled() {
-        let mut sources = SystemSources::new();
+        let mut sources = SystemSources::new().unwrap();
         let timeseries = collect_metrics(&mut sources, "testhost", 0);
         let process_metrics = find_metric(&timeseries, "agemon_process_cpu_usage_percent");
         assert!(process_metrics.is_empty());

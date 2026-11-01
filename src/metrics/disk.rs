@@ -3,7 +3,7 @@ use sysinfo::{Disks, System};
 use super::MetricSink;
 
 pub fn collect(disks: &Disks, sink: &mut MetricSink) {
-    for disk in disks.list() {
+    for disk in disks {
         let mount_point = disk.mount_point().to_string_lossy().into_owned();
         let device = disk.name().to_string_lossy().into_owned();
         let fs_type = disk.file_system().to_string_lossy().into_owned();
@@ -81,7 +81,7 @@ mod tests {
 
     #[test]
     fn test_disk_metrics_have_required_labels() {
-        let disks = Disks::new_with_refreshed_list();
+        let disks = Disks::new_with_refreshed_list().unwrap();
         let mut sink = MetricSink::new(1000, "testhost");
         collect(&disks, &mut sink);
         let timeseries = sink.into_series();
@@ -95,12 +95,12 @@ mod tests {
 
     #[test]
     fn test_five_metrics_per_disk() {
-        let disks = Disks::new_with_refreshed_list();
+        let disks = Disks::new_with_refreshed_list().unwrap();
         let mut sink = MetricSink::new(1000, "testhost");
         collect(&disks, &mut sink);
         let timeseries = sink.into_series();
 
-        let disk_count = disks.list().len();
+        let disk_count = disks.len();
         if disk_count > 0 {
             assert_eq!(timeseries.len(), disk_count * 5);
         }
@@ -108,7 +108,7 @@ mod tests {
 
     #[test]
     fn test_disk_io_metrics() {
-        let mut sys = System::new();
+        let mut sys = System::new().unwrap();
         sys.refresh_processes_specifics(
             sysinfo::ProcessesToUpdate::All,
             true,

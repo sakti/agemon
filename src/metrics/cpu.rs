@@ -9,7 +9,7 @@ pub fn collect(sys: &System, sink: &mut MetricSink) {
     for cpu in sys.cpus() {
         sink.record_with(
             "agemon_cpu_core_usage_percent",
-            cpu.cpu_usage() as f64,
+            cpu.usage() as f64,
             &[("cpu", cpu.name())],
         );
     }
@@ -24,7 +24,7 @@ mod tests {
 
     #[test]
     fn test_collect_produces_cpu_metrics() {
-        let sys = System::new_all();
+        let sys = System::new_all().unwrap();
         let mut sink = MetricSink::new(1000, "testhost");
         collect(&sys, &mut sink);
         let timeseries = sink.into_series();
@@ -39,7 +39,7 @@ mod tests {
 
     #[test]
     fn test_per_core_metrics_have_cpu_label() {
-        let sys = System::new_all();
+        let sys = System::new_all().unwrap();
         let mut sink = MetricSink::new(1000, "testhost");
         collect(&sys, &mut sink);
         let timeseries = sink.into_series();

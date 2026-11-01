@@ -39,7 +39,7 @@ mod tests {
 
     #[test]
     fn test_collect_produces_all_memory_metrics() {
-        let mut sys = System::new();
+        let mut sys = System::new().unwrap();
         sys.refresh_memory_specifics(MemoryRefreshKind::everything());
         let mut sink = MetricSink::new(1000, "testhost");
         collect(&sys, &mut sink);
@@ -64,7 +64,7 @@ mod tests {
 
     #[test]
     fn test_memory_usage_ratio_bounded() {
-        let mut sys = System::new();
+        let mut sys = System::new().unwrap();
         sys.refresh_memory_specifics(MemoryRefreshKind::everything());
         let mut sink = MetricSink::new(1000, "testhost");
         collect(&sys, &mut sink);

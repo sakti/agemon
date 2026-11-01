@@ -7,7 +7,7 @@ use std::{
 };
 
 use clap::Parser;
-use miette::Result;
+use miette::{IntoDiagnostic, Result, WrapErr};
 use sysinfo::System;
 use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
@@ -76,7 +76,9 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let mut sources = SystemSources::new();
+    let mut sources = SystemSources::new()
+        .into_diagnostic()
+        .wrap_err("failed to initialize system metric sources")?;
     let client = PushClient::new(
         &args.remote_write_url,
         args.username.as_deref(),
@@ -90,7 +92,7 @@ fn main() -> Result<()> {
             let hostname = args
                 .hostname
                 .clone()
-                .or_else(System::host_name)
+                .or_else(|| System::host_name().ok())
                 .unwrap_or_else(|| "unknown".to_string());
             let timeseries = metrics::collect_metrics(&mut sources, &hostname, args.top_processes);
             info!("collected {} metrics", timeseries.len());

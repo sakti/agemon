@@ -3,20 +3,22 @@ use sysinfo::System;
 use super::MetricSink;
 
 pub fn collect(sink: &mut MetricSink) {
-    sink.record("agemon_system_uptime_seconds", System::uptime() as f64);
-    sink.record(
-        "agemon_system_boot_time_seconds",
-        System::boot_time() as f64,
-    );
+    if let Ok(uptime) = System::uptime() {
+        sink.record("agemon_system_uptime_seconds", uptime as f64);
+    }
+    if let Ok(boot_time) = System::boot_time() {
+        sink.record("agemon_system_boot_time_seconds", boot_time as f64);
+    }
 
-    let load_avg = System::load_average();
-    sink.record("agemon_load_average_1m", load_avg.one);
-    sink.record("agemon_load_average_5m", load_avg.five);
-    sink.record("agemon_load_average_15m", load_avg.fifteen);
+    if let Ok(load_avg) = System::load_average() {
+        sink.record("agemon_load_average_1m", load_avg.one);
+        sink.record("agemon_load_average_5m", load_avg.five);
+        sink.record("agemon_load_average_15m", load_avg.fifteen);
+    }
 
-    let os_name = System::name().unwrap_or_else(|| "unknown".to_string());
-    let os_version = System::os_version().unwrap_or_else(|| "unknown".to_string());
-    let kernel_version = System::kernel_version().unwrap_or_else(|| "unknown".to_string());
+    let os_name = System::name().unwrap_or_else(|_| "unknown".to_string());
+    let os_version = System::os_version().unwrap_or_else(|_| "unknown".to_string());
+    let kernel_version = System::kernel_version().unwrap_or_else(|_| "unknown".to_string());
     let arch = System::cpu_arch();
 
     sink.record_with(

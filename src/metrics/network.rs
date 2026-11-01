@@ -3,8 +3,9 @@ use sysinfo::Networks;
 use super::MetricSink;
 
 pub fn collect(networks: &Networks, sink: &mut MetricSink) {
-    for (interface_name, data) in networks.list() {
-        let labels = [("interface", interface_name.as_str())];
+    for (interface_name, data) in networks {
+        let interface_name = interface_name.to_string_lossy();
+        let labels = [("interface", interface_name.as_ref())];
 
         sink.record_with(
             "agemon_network_received_bytes_total",
@@ -48,7 +49,7 @@ mod tests {
 
     #[test]
     fn test_collect_network_metrics_have_interface_label() {
-        let networks = Networks::new_with_refreshed_list();
+        let networks = Networks::new_with_refreshed_list().unwrap();
         let mut sink = MetricSink::new(1000, "testhost");
         collect(&networks, &mut sink);
         let timeseries = sink.into_series();
@@ -64,12 +65,12 @@ mod tests {
 
     #[test]
     fn test_six_metrics_per_interface() {
-        let networks = Networks::new_with_refreshed_list();
+        let networks = Networks::new_with_refreshed_list().unwrap();
         let mut sink = MetricSink::new(1000, "testhost");
         collect(&networks, &mut sink);
         let timeseries = sink.into_series();
 
-        let interface_count = networks.list().len();
+        let interface_count = networks.len();
         if interface_count > 0 {
             assert_eq!(timeseries.len(), interface_count * 6);
         }

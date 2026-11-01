@@ -77,7 +77,7 @@ mod tests {
     use crate::metrics::{find_metric, get_label_value};
 
     fn make_sys() -> System {
-        let mut sys = System::new_all();
+        let mut sys = System::new_all().unwrap();
         sys.refresh_processes_specifics(
             sysinfo::ProcessesToUpdate::All,
             true,

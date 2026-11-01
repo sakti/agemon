@@ -3,7 +3,7 @@ use sysinfo::Components;
 use super::MetricSink;
 
 pub fn collect(components: &Components, sink: &mut MetricSink) {
-    for component in components.list() {
+    for component in components {
         let labels = [("sensor", component.label())];
 
         if let Some(temp) = component.temperature() {
@@ -33,7 +33,7 @@ mod tests {
 
     #[test]
     fn test_temperature_metrics_have_sensor_label() {
-        let components = Components::new_with_refreshed_list();
+        let components = Components::new_with_refreshed_list().unwrap();
         let mut sink = MetricSink::new(1000, "testhost");
         collect(&components, &mut sink);
         let timeseries = sink.into_series();
