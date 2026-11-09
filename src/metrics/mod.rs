@@ -8,8 +8,13 @@ mod procfs;
 mod system;
 mod temperature;
 
+use std::time::{Duration, Instant};
+
 use prometheus_remote_write::{LABEL_NAME, Label, Sample, TimeSeries};
-use sysinfo::{Components, Disks, MemoryRefreshKind, Networks, ProcessRefreshKind, System};
+use sysinfo::{
+    Components, Disks, MINIMUM_CPU_UPDATE_INTERVAL, MemoryRefreshKind, Networks,
+    ProcessRefreshKind, System,
+};
 
 /// Accumulates timeseries for one collection cycle, stamping every metric
 /// with the shared timestamp and hostname labels.
@@ -68,19 +73,29 @@ pub struct SystemSources {
     disks: Disks,
     networks: Networks,
     components: Components,
+    last_refresh: Instant,
 }
 
 impl SystemSources {
+    /// Creates the handles and performs the initial refresh. Blocks for
+    /// `MINIMUM_CPU_UPDATE_INTERVAL` so the first collection's CPU usage is
+    /// computed over a valid window instead of reading as 0.
     pub fn new() -> Result<Self, sysinfo::Error> {
-        Ok(Self {
-            sys: System::new_all()?,
+        let sys = System::new_all()?;
+        let last_refresh = Instant::now();
+        let sources = Self {
+            sys,
             disks: Disks::new_with_refreshed_list()?,
             networks: Networks::new_with_refreshed_list()?,
             components: Components::new_with_refreshed_list()?,
-        })
+            last_refresh,
+        };
+        std::thread::sleep(MINIMUM_CPU_UPDATE_INTERVAL.saturating_sub(last_refresh.elapsed()));
+        Ok(sources)
     }
 
-    fn refresh(&mut self) {
+    /// Refreshes all handles and returns the time elapsed since the previous refresh.
+    fn refresh(&mut self) -> Duration {
         self.sys
             .refresh_memory_specifics(MemoryRefreshKind::everything());
         self.sys.refresh_cpu_usage();
@@ -95,6 +110,11 @@ impl SystemSources {
         self.disks.refresh(true);
         self.networks.refresh(true);
         self.components.refresh(true);
+
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.last_refresh);
+        self.last_refresh = now;
+        elapsed
     }
 }
 
@@ -108,14 +128,16 @@ pub fn collect_metrics(
         .unwrap()
         .as_millis() as i64;
 
-    sources.refresh();
+    let elapsed = sources.refresh();
 
     let mut sink = MetricSink::new(timestamp, hostname);
 
     cpu::collect(&sources.sys, &mut sink);
     memory::collect(&sources.sys, &mut sink);
     disk::collect(&sources.disks, &mut sink);
-    disk::collect_io(&sources.sys, &mut sink);
+    disk::collect_io(&sources.sys, elapsed, &mut sink);
+    #[cfg(target_os = "linux")]
+    disk::collect_diskstats(&mut sink);
     network::collect(&sources.networks, &mut sink);
     temperature::collect(&sources.components, &mut sink);
     system::collect(&mut sink);

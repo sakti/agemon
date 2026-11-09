@@ -1,4 +1,8 @@
+use std::time::Duration;
+
 use sysinfo::{Disks, System};
+#[cfg(target_os = "linux")]
+use tracing::debug;
 
 use super::MetricSink;
 
@@ -43,33 +47,64 @@ pub fn collect(disks: &Disks, sink: &mut MetricSink) {
     }
 }
 
-pub fn collect_io(sys: &System, sink: &mut MetricSink) {
-    let mut total_read_bytes: u64 = 0;
-    let mut total_written_bytes: u64 = 0;
-    let mut read_bytes_per_sec: u64 = 0;
-    let mut written_bytes_per_sec: u64 = 0;
+/// Per-second disk I/O rates, summed over all processes.
+///
+/// sysinfo reports per-process `read_bytes`/`written_bytes` as the delta since the
+/// previous refresh, so the sum is divided by the measured time between refreshes.
+pub fn collect_io(sys: &System, elapsed: Duration, sink: &mut MetricSink) {
+    let (read, written) = sys
+        .processes()
+        .values()
+        .filter(|p| p.thread_kind().is_none())
+        .map(|p| p.disk_usage())
+        .fold((0u64, 0u64), |(r, w), u| {
+            (r + u.read_bytes, w + u.written_bytes)
+        });
 
-    for process in sys.processes().values() {
-        let disk_usage = process.disk_usage();
-        total_read_bytes += disk_usage.total_read_bytes;
-        total_written_bytes += disk_usage.total_written_bytes;
-        read_bytes_per_sec += disk_usage.read_bytes;
-        written_bytes_per_sec += disk_usage.written_bytes;
+    let secs = elapsed.as_secs_f64();
+    let (read_rate, written_rate) = if secs > 0.0 {
+        (read as f64 / secs, written as f64 / secs)
+    } else {
+        (0.0, 0.0)
+    };
+
+    sink.record("agemon_disk_io_read_bytes_per_sec", read_rate);
+    sink.record("agemon_disk_io_written_bytes_per_sec", written_rate);
+}
+
+/// Monotonic per-device byte counters from `/proc/diskstats`.
+///
+/// The kernel always reports sectors in 512-byte units, regardless of the device's
+/// physical sector size. Partitions are reported alongside their parent disk, so
+/// summing across `device` double-counts.
+#[cfg(target_os = "linux")]
+pub fn collect_diskstats(sink: &mut MetricSink) {
+    const SECTOR_SIZE: f64 = 512.0;
+
+    let stats = match procfs::diskstats() {
+        Ok(stats) => stats,
+        Err(err) => {
+            debug!("failed to read /proc/diskstats: {err}");
+            return;
+        }
+    };
+
+    for stat in stats {
+        if stat.name.starts_with("loop") || stat.name.starts_with("ram") {
+            continue;
+        }
+        let labels = [("device", stat.name.as_str())];
+        sink.record_with(
+            "agemon_disk_io_read_bytes_total",
+            stat.sectors_read as f64 * SECTOR_SIZE,
+            &labels,
+        );
+        sink.record_with(
+            "agemon_disk_io_written_bytes_total",
+            stat.sectors_written as f64 * SECTOR_SIZE,
+            &labels,
+        );
     }
-
-    sink.record("agemon_disk_io_read_bytes_total", total_read_bytes as f64);
-    sink.record(
-        "agemon_disk_io_written_bytes_total",
-        total_written_bytes as f64,
-    );
-    sink.record(
-        "agemon_disk_io_read_bytes_per_sec",
-        read_bytes_per_sec as f64,
-    );
-    sink.record(
-        "agemon_disk_io_written_bytes_per_sec",
-        written_bytes_per_sec as f64,
-    );
 }
 
 #[cfg(test)]
@@ -107,7 +142,7 @@ mod tests {
     }
 
     #[test]
-    fn test_disk_io_metrics() {
+    fn test_disk_io_rate_metrics() {
         let mut sys = System::new().unwrap();
         sys.refresh_processes_specifics(
             sysinfo::ProcessesToUpdate::All,
@@ -115,18 +150,41 @@ mod tests {
             ProcessRefreshKind::nothing().with_disk_usage(),
         );
         let mut sink = MetricSink::new(1000, "testhost");
-        collect_io(&sys, &mut sink);
+        collect_io(&sys, Duration::from_secs(15), &mut sink);
         let timeseries = sink.into_series();
 
-        let expected = [
-            "agemon_disk_io_read_bytes_total",
-            "agemon_disk_io_written_bytes_total",
+        for name in [
             "agemon_disk_io_read_bytes_per_sec",
             "agemon_disk_io_written_bytes_per_sec",
-        ];
-        for name in expected {
+        ] {
             let found = find_metric(&timeseries, name);
             assert_eq!(found.len(), 1, "expected exactly one {name}");
+        }
+    }
+
+    #[test]
+    fn test_disk_io_rate_zero_elapsed_is_zero() {
+        let sys = System::new().unwrap();
+        let mut sink = MetricSink::new(1000, "testhost");
+        collect_io(&sys, Duration::ZERO, &mut sink);
+        for ts in sink.into_series() {
+            assert_eq!(ts.samples[0].value, 0.0);
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_diskstats_metrics_have_device_label() {
+        let mut sink = MetricSink::new(1000, "testhost");
+        collect_diskstats(&mut sink);
+        let timeseries = sink.into_series();
+
+        let read = find_metric(&timeseries, "agemon_disk_io_read_bytes_total");
+        let written = find_metric(&timeseries, "agemon_disk_io_written_bytes_total");
+        assert_eq!(read.len(), written.len());
+        for ts in read.iter().chain(written.iter()) {
+            let device = get_label_value(ts, "device").expect("device label");
+            assert!(!device.starts_with("loop") && !device.starts_with("ram"));
         }
     }
 }

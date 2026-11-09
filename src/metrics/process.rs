@@ -8,17 +8,23 @@ pub fn collect(sys: &System, top_n: usize, sink: &mut MetricSink) {
     let mut cpu_by_name: HashMap<String, f64> = HashMap::new();
     let mut mem_by_name: HashMap<String, u64> = HashMap::new();
 
-    for process in sys.processes().values() {
+    let mut process_count: u64 = 0;
+
+    // On Linux, sysinfo also lists each thread as its own task entry. Skip those:
+    // a process's CPU time already includes its threads, and threads share the
+    // parent's address space so they report the same RSS.
+    for process in sys
+        .processes()
+        .values()
+        .filter(|p| p.thread_kind().is_none())
+    {
+        process_count += 1;
         let name = process.name().to_string_lossy().into_owned();
         *cpu_by_name.entry(name.clone()).or_default() += process.cpu_usage() as f64;
-        // Only count memory for non-thread processes to avoid double-counting RSS
-        // (threads share address space, so each thread reports the same RSS as its parent)
-        if process.thread_kind().is_none() {
-            *mem_by_name.entry(name).or_default() += process.memory();
-        }
+        *mem_by_name.entry(name).or_default() += process.memory();
     }
 
-    sink.record("agemon_process_count", sys.processes().len() as f64);
+    sink.record("agemon_process_count", process_count as f64);
 
     // Top N by CPU
     let mut cpu_sorted: Vec<_> = cpu_by_name.into_iter().collect();

@@ -40,10 +40,10 @@ A lightweight agent that collects system metrics and pushes them to Prometheus v
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `agemon_disk_io_read_bytes_total` | counter | - | Total bytes read from disk (aggregated from all processes) |
-| `agemon_disk_io_written_bytes_total` | counter | - | Total bytes written to disk (aggregated from all processes) |
-| `agemon_disk_io_read_bytes_per_sec` | gauge | - | Bytes read per second since last refresh |
-| `agemon_disk_io_written_bytes_per_sec` | gauge | - | Bytes written per second since last refresh |
+| `agemon_disk_io_read_bytes_total` | counter | `device` | Bytes read from the block device since boot, from `/proc/diskstats` (Linux only; partitions are listed alongside their disk, so don't sum across `device`) |
+| `agemon_disk_io_written_bytes_total` | counter | `device` | Bytes written to the block device since boot, from `/proc/diskstats` (Linux only) |
+| `agemon_disk_io_read_bytes_per_sec` | gauge | - | Bytes read per second by all processes, averaged over the last collection interval |
+| `agemon_disk_io_written_bytes_per_sec` | gauge | - | Bytes written per second by all processes, averaged over the last collection interval |
 
 ### Network
 
@@ -107,10 +107,11 @@ agemon [OPTIONS]
 
 | Option | Environment Variable | Description | Default |
 |--------|---------------------|-------------|---------|
-| `-i, --interval` | - | Interval between metric collections in seconds | `15` |
+| `-i, --interval` | - | Interval between metric collections in seconds (minimum `1`) | `15` |
 | `-r, --remote-write-url` | `AGEMON_REMOTE_WRITE_URL` | Prometheus remote write endpoint URL | `http://localhost:9090/api/v1/write` |
 | `-u, --username` | `AGEMON_REMOTE_WRITE_USERNAME` | Username for Basic authentication (optional) | - |
 | `-p, --password` | `AGEMON_REMOTE_WRITE_PASSWORD` | Password for Basic authentication (optional) | - |
+| `--password-file` | `AGEMON_REMOTE_WRITE_PASSWORD_FILE` | File containing only the password (trailing newline ignored); conflicts with `--password` | - |
 | `-t, --top-processes` | `AGEMON_TOP_PROCESSES` | Number of top processes to report by CPU and memory (`0` disables) | `10` |
 | `--hostname` | `AGEMON_HOSTNAME` | Value of the `hostname` label | system hostname |
 
@@ -184,7 +185,7 @@ Then enable the service:
     interval = 15;
     remoteWriteUrl = "https://prometheus.example.com/api/v1/write";
     username = "myuser";
-    passwordFile = "/run/secrets/agemon-password";
+    passwordFile = "/run/secrets/agemon-password"; # raw secret, e.g. from sops-nix/agenix
     # hostname = "my-host"; # optional, default is the system hostname
   };
 }

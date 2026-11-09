@@ -2,6 +2,8 @@ mod metrics;
 mod push;
 
 use std::{
+    fs,
+    path::{Path, PathBuf},
     thread,
     time::{Duration, Instant},
 };
@@ -9,7 +11,7 @@ use std::{
 use clap::Parser;
 use miette::{IntoDiagnostic, Result, WrapErr};
 use sysinfo::System;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use metrics::SystemSources;
@@ -23,8 +25,8 @@ const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VE
     about = "Agent monitoring - push system metrics to Prometheus remote write"
 )]
 pub struct Args {
-    /// Interval between metric collections in seconds
-    #[arg(short, long, default_value_t = 15)]
+    /// Interval between metric collections in seconds (minimum 1)
+    #[arg(short, long, default_value_t = 15, value_parser = clap::value_parser!(u64).range(1..))]
     interval: u64,
 
     /// Prometheus remote write endpoint URL
@@ -36,8 +38,17 @@ pub struct Args {
     pub username: Option<String>,
 
     /// Password for Basic authentication (optional)
-    #[arg(short, long, env = "AGEMON_REMOTE_WRITE_PASSWORD")]
+    #[arg(
+        short,
+        long,
+        env = "AGEMON_REMOTE_WRITE_PASSWORD",
+        conflicts_with = "password_file"
+    )]
     pub password: Option<String>,
+
+    /// File containing the password for Basic authentication (raw value, trailing newline ignored)
+    #[arg(long, env = "AGEMON_REMOTE_WRITE_PASSWORD_FILE")]
+    pub password_file: Option<PathBuf>,
 
     /// Number of top processes to report by CPU and memory (0 to disable)
     #[arg(short = 't', long, env = "AGEMON_TOP_PROCESSES", default_value_t = 10)]
@@ -48,7 +59,7 @@ pub struct Args {
     hostname: Option<String>,
 }
 
-fn execute_at_interval<F>(mut task: F, interval_secs: u64) -> Result<()>
+fn execute_at_interval<F>(mut task: F, interval_secs: u64) -> !
 where
     F: FnMut() -> Result<()>,
 {
@@ -68,6 +79,13 @@ where
     }
 }
 
+fn read_password_file(path: &Path) -> Result<String> {
+    let contents = fs::read_to_string(path)
+        .into_diagnostic()
+        .wrap_err_with(|| format!("failed to read password file {}", path.display()))?;
+    Ok(contents.trim_end_matches(['\n', '\r']).to_string())
+}
+
 fn main() -> Result<()> {
     tracing_subscriber::registry()
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| "agemon=info".into()))
@@ -76,13 +94,23 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
+    let password = match &args.password_file {
+        Some(path) => Some(read_password_file(path)?),
+        None => args.password.clone(),
+    };
+    match (&args.username, &password) {
+        (Some(_), None) => warn!("username set without a password; pushing without authentication"),
+        (None, Some(_)) => warn!("password set without a username; pushing without authentication"),
+        _ => {}
+    }
+
     let mut sources = SystemSources::new()
         .into_diagnostic()
         .wrap_err("failed to initialize system metric sources")?;
     let client = PushClient::new(
         &args.remote_write_url,
         args.username.as_deref(),
-        args.password.as_deref(),
+        password.as_deref(),
     )?;
 
     info!("starting agemon with interval: {}s", args.interval);
@@ -99,7 +127,36 @@ fn main() -> Result<()> {
             client.push(timeseries)
         },
         args.interval,
-    )?;
+    )
+}
 
-    Ok(())
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_interval_zero_rejected() {
+        assert!(Args::try_parse_from(["agemon", "--interval", "0"]).is_err());
+        assert!(Args::try_parse_from(["agemon", "--interval", "1"]).is_ok());
+    }
+
+    #[test]
+    fn test_password_and_password_file_conflict() {
+        let res = Args::try_parse_from(["agemon", "-p", "x", "--password-file", "/tmp/x"]);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_read_password_file_strips_trailing_newline() {
+        let path = std::env::temp_dir().join(format!("agemon-pw-test-{}", std::process::id()));
+        fs::write(&path, "s3cret \r\n").unwrap();
+        let pw = read_password_file(&path).unwrap();
+        fs::remove_file(&path).unwrap();
+        assert_eq!(pw, "s3cret ");
+    }
+
+    #[test]
+    fn test_read_password_file_missing_errors() {
+        assert!(read_password_file(Path::new("/nonexistent/agemon-pw")).is_err());
+    }
 }

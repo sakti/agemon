@@ -21,13 +21,17 @@
     supportedSystems = ["x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin"];
     forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
 
-    mkPackage = system: let
+    mkCrane = system: let
       overlays = [(import rust-overlay)];
       pkgs = import nixpkgs {
         inherit system overlays;
       };
 
-      rustToolchain = pkgs.rust-bin.stable.latest.minimal;
+      # clippy and rustfmt are only needed by the checks, but sharing one toolchain
+      # lets the checks reuse the package's dependency artifacts.
+      rustToolchain = pkgs.rust-bin.stable.latest.minimal.override {
+        extensions = ["clippy" "rustfmt"];
+      };
       craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
       src = craneLib.cleanCargoSource ./.;
 
@@ -42,12 +46,36 @@
       };
 
       cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+    in {
+      inherit pkgs craneLib src commonArgs cargoArtifacts;
+    };
+
+    mkPackage = system: let
+      inherit (mkCrane system) craneLib commonArgs cargoArtifacts;
     in
       craneLib.buildPackage (commonArgs
         // {
           inherit cargoArtifacts;
           doCheck = false;
         });
+
+    mkChecks = system: let
+      inherit (mkCrane system) pkgs craneLib src commonArgs cargoArtifacts;
+    in {
+      package = mkPackage system;
+      test = craneLib.cargoTest (commonArgs
+        // {
+          inherit cargoArtifacts;
+          # reqwest's rustls platform verifier needs a CA bundle to build a client.
+          SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+        });
+      clippy = craneLib.cargoClippy (commonArgs
+        // {
+          inherit cargoArtifacts;
+          cargoClippyExtraArgs = "--all-targets -- -D warnings";
+        });
+      fmt = craneLib.cargoFmt {inherit src;};
+    };
 
     mkDockerImage = system: let
       overlays = [(import rust-overlay)];
@@ -108,6 +136,8 @@
           docker = mkDockerImage system;
         });
 
+      checks = forAllSystems mkChecks;
+
       homeManagerModules.default = {
         config,
         lib,
@@ -126,7 +156,7 @@
           };
 
           interval = lib.mkOption {
-            type = lib.types.int;
+            type = lib.types.ints.positive;
             default = 15;
             description = "Interval between metric collections in seconds.";
           };
@@ -146,7 +176,20 @@
           passwordFile = lib.mkOption {
             type = lib.types.nullOr lib.types.path;
             default = null;
-            description = "Path to file containing password for Basic authentication.";
+            description = ''
+              Path to a file containing only the password for Basic authentication
+              (e.g. a sops-nix or agenix secret). A trailing newline is ignored.
+              Read at runtime, so the secret never enters the Nix store.
+            '';
+          };
+
+          environmentFile = lib.mkOption {
+            type = lib.types.nullOr lib.types.path;
+            default = null;
+            description = ''
+              Optional systemd EnvironmentFile with KEY=value lines, e.g.
+              AGEMON_REMOTE_WRITE_PASSWORD=secret. Use passwordFile for a raw secret.
+            '';
           };
 
           topProcesses = lib.mkOption {
@@ -166,13 +209,12 @@
           systemd.user.services.agemon = {
             Unit = {
               Description = "Agent Monitoring - push system metrics to Prometheus";
-              After = ["network.target"];
             };
 
             Service = {
               Type = "simple";
-              EnvironmentFile = lib.optionals (cfg.passwordFile != null) [
-                cfg.passwordFile
+              EnvironmentFile = lib.optionals (cfg.environmentFile != null) [
+                cfg.environmentFile
               ];
               ExecStart = let
                 args =
@@ -187,6 +229,10 @@
                   ++ lib.optionals (cfg.username != null) [
                     "--username"
                     cfg.username
+                  ]
+                  ++ lib.optionals (cfg.passwordFile != null) [
+                    "--password-file"
+                    (toString cfg.passwordFile)
                   ]
                   ++ lib.optionals (cfg.hostname != null) [
                     "--hostname"
