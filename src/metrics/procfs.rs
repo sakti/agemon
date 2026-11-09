@@ -1,6 +1,14 @@
-use procfs::{Current, CurrentSI};
+use procfs::{Current, CurrentSI, ProcResult};
+use tracing::debug;
 
 use super::MetricSink;
+
+/// Unwraps a /proc read, logging the error at debug level so missing metrics leave a trace.
+fn ok_or_log<T>(result: ProcResult<T>, source: &str) -> Option<T> {
+    result
+        .inspect_err(|err| debug!("failed to read {source}: {err}"))
+        .ok()
+}
 
 pub fn collect(sink: &mut MetricSink) {
     collect_tcp_connections(sink);
@@ -13,11 +21,19 @@ pub fn collect(sink: &mut MetricSink) {
 }
 
 fn collect_tcp_connections(sink: &mut MetricSink) {
-    for (metric_name, entries) in [
-        ("agemon_tcp_connections", procfs::net::tcp()),
-        ("agemon_tcp6_connections", procfs::net::tcp6()),
+    for (metric_name, source, entries) in [
+        (
+            "agemon_tcp_connections",
+            "/proc/net/tcp",
+            procfs::net::tcp(),
+        ),
+        (
+            "agemon_tcp6_connections",
+            "/proc/net/tcp6",
+            procfs::net::tcp6(),
+        ),
     ] {
-        if let Ok(entries) = entries {
+        if let Some(entries) = ok_or_log(entries, source) {
             let mut established: u64 = 0;
             let mut listen: u64 = 0;
             let mut time_wait: u64 = 0;
@@ -48,7 +64,7 @@ fn collect_tcp_connections(sink: &mut MetricSink) {
 }
 
 fn collect_file_descriptors(sink: &mut MetricSink) {
-    if let Ok(file_state) = procfs::sys::fs::file_nr() {
+    if let Some(file_state) = ok_or_log(procfs::sys::fs::file_nr(), "/proc/sys/fs/file-nr") {
         sink.record(
             "agemon_file_descriptors_allocated",
             file_state.allocated as f64,
@@ -58,7 +74,7 @@ fn collect_file_descriptors(sink: &mut MetricSink) {
 }
 
 fn collect_kernel_stats(sink: &mut MetricSink) {
-    if let Ok(kernel_stats) = procfs::KernelStats::current() {
+    if let Some(kernel_stats) = ok_or_log(procfs::KernelStats::current(), "/proc/stat") {
         sink.record("agemon_context_switches_total", kernel_stats.ctxt as f64);
         sink.record(
             "agemon_processes_forked_total",
@@ -76,14 +92,14 @@ fn collect_kernel_stats(sink: &mut MetricSink) {
 }
 
 fn collect_psi(sink: &mut MetricSink) {
-    if let Ok(psi) = procfs::CpuPressure::current() {
+    if let Some(psi) = ok_or_log(procfs::CpuPressure::current(), "/proc/pressure/cpu") {
         sink.record("agemon_psi_cpu_some_avg10", psi.some.avg10.into());
         sink.record("agemon_psi_cpu_some_avg60", psi.some.avg60.into());
         sink.record("agemon_psi_cpu_some_avg300", psi.some.avg300.into());
         sink.record("agemon_psi_cpu_some_total_us", psi.some.total as f64);
     }
 
-    if let Ok(psi) = procfs::MemoryPressure::current() {
+    if let Some(psi) = ok_or_log(procfs::MemoryPressure::current(), "/proc/pressure/memory") {
         for (prefix, record) in [("some", &psi.some), ("full", &psi.full)] {
             sink.record(
                 &format!("agemon_psi_memory_{prefix}_avg10"),
@@ -104,7 +120,7 @@ fn collect_psi(sink: &mut MetricSink) {
         }
     }
 
-    if let Ok(psi) = procfs::IoPressure::current() {
+    if let Some(psi) = ok_or_log(procfs::IoPressure::current(), "/proc/pressure/io") {
         for (prefix, record) in [("some", &psi.some), ("full", &psi.full)] {
             sink.record(
                 &format!("agemon_psi_io_{prefix}_avg10"),
@@ -127,7 +143,7 @@ fn collect_psi(sink: &mut MetricSink) {
 }
 
 fn collect_vmstat(sink: &mut MetricSink) {
-    if let Ok(vmstat) = procfs::vmstat() {
+    if let Some(vmstat) = ok_or_log(procfs::vmstat(), "/proc/vmstat") {
         for (key, metric_name) in [
             ("pgfault", "agemon_vmstat_pgfault_total"),
             ("pgmajfault", "agemon_vmstat_pgmajfault_total"),
@@ -145,7 +161,7 @@ fn collect_vmstat(sink: &mut MetricSink) {
 }
 
 fn collect_snmp(sink: &mut MetricSink) {
-    if let Ok(snmp) = procfs::net::snmp() {
+    if let Some(snmp) = ok_or_log(procfs::net::snmp(), "/proc/net/snmp") {
         sink.record(
             "agemon_tcp_retrans_segs_total",
             snmp.tcp_retrans_segs as f64,
@@ -174,7 +190,10 @@ fn collect_snmp(sink: &mut MetricSink) {
 }
 
 fn collect_entropy(sink: &mut MetricSink) {
-    if let Ok(entropy) = procfs::sys::kernel::random::entropy_avail() {
+    if let Some(entropy) = ok_or_log(
+        procfs::sys::kernel::random::entropy_avail(),
+        "/proc/sys/kernel/random/entropy_avail",
+    ) {
         sink.record("agemon_entropy_available", entropy as f64);
     }
 }
