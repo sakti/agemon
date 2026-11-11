@@ -156,6 +156,7 @@ agemon [OPTIONS]
 | `--password-file` | `AGEMON_REMOTE_WRITE_PASSWORD_FILE` | File containing only the password (trailing newline ignored); conflicts with `--password` | - |
 | `-t, --top-processes` | `AGEMON_TOP_PROCESSES` | Number of top processes to report by CPU and memory (`0` disables) | `10` |
 | `--hostname` | `AGEMON_HOSTNAME` | Value of the `hostname` label | system hostname |
+| `--max-queue-bytes` | `AGEMON_MAX_QUEUE_BYTES` | Maximum size of the in-memory queue for failed pushes, in bytes (`0` keeps only the newest block) | `8388608` |
 
 ### Examples
 
@@ -179,6 +180,24 @@ export AGEMON_REMOTE_WRITE_USERNAME=myuser
 export AGEMON_REMOTE_WRITE_PASSWORD=mypass
 agemon -i 30
 ```
+
+### Failed pushes
+
+Each collection is encoded as one block. AgeMon handles a failed push almost the same as
+`vmagent`:
+
+- A block that the remote storage did not receive (network error, timeout, `429`, `5xx` or
+  other unexpected status) stays in an in-memory queue. AgeMon sends the queue again on
+  a subsequent collection, oldest block first, so the samples arrive in timestamp order.
+- After a failure, AgeMon waits before the next attempt. The delay starts at 1 second and
+  doubles on each consecutive failure, to a maximum of 60 seconds. A `Retry-After` response
+  header in seconds overrides the delay.
+- A block that gets a `400`, `409` or `415` response is dropped, because a retry cannot
+  succeed. The log shows the response body.
+- When the queue is larger than `--max-queue-bytes`, AgeMon drops the oldest blocks.
+- The queue is not written to disk. A restart loses the queued blocks.
+
+The remote storage must accept old samples for late blocks to be stored.
 
 ### Logging
 
@@ -235,6 +254,7 @@ Then enable the service:
     passwordFile = "/run/secrets/agemon-password"; # raw secret, e.g. from sops-nix/agenix
     # hostname = "my-host"; # optional, default is the system hostname
     # topProcesses = 10; # optional, 0 disables the process metrics
+    # maxQueueBytes = 8388608; # optional, in-memory queue limit for failed pushes
     # environmentFile = "/run/secrets/agemon-env"; # optional, KEY=value lines
   };
 }

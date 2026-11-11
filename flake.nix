@@ -200,6 +200,12 @@
           default = null;
           description = "Value of the hostname label. Default is the system hostname.";
         };
+
+        maxQueueBytes = lib.mkOption {
+          type = lib.types.nullOr lib.types.ints.unsigned;
+          default = null;
+          description = "Maximum size in bytes of the in-memory queue for failed pushes. Default is the agemon default.";
+        };
       };
 
       config = lib.mkIf cfg.enable {
@@ -234,6 +240,10 @@
                 ++ lib.optionals (cfg.hostname != null) [
                   "--hostname"
                   cfg.hostname
+                ]
+                ++ lib.optionals (cfg.maxQueueBytes != null) [
+                  "--max-queue-bytes"
+                  (toString cfg.maxQueueBytes)
                 ];
             in "${cfg.package}/bin/agemon ${lib.escapeShellArgs args}";
             Restart = "on-failure";

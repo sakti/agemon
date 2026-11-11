@@ -57,6 +57,11 @@ struct Args {
     /// Value of the `hostname` label (default: the system hostname, read on each collection)
     #[arg(long, env = "AGEMON_HOSTNAME")]
     hostname: Option<String>,
+
+    /// Maximum size in bytes of the in-memory queue of blocks that the remote storage has not
+    /// accepted yet (the oldest blocks are dropped first; 0 keeps only the newest block)
+    #[arg(long, env = "AGEMON_MAX_QUEUE_BYTES", default_value_t = 8 * 1024 * 1024)]
+    max_queue_bytes: usize,
 }
 
 fn execute_at_interval<F>(mut task: F, interval_secs: u64) -> !
@@ -107,10 +112,11 @@ fn main() -> Result<()> {
     let mut sources = SystemSources::new()
         .into_diagnostic()
         .wrap_err("failed to initialize system metric sources")?;
-    let client = PushClient::new(
+    let mut client = PushClient::new(
         &args.remote_write_url,
         args.username.as_deref(),
         password.as_deref(),
+        args.max_queue_bytes,
     )?;
 
     info!("starting agemon with interval: {}s", args.interval);
