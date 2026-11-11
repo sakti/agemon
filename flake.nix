@@ -7,7 +7,6 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    flake-utils.url = "github:numtide/flake-utils";
     crane.url = "github:ipetkov/crane";
   };
 
@@ -15,7 +14,6 @@
     self,
     nixpkgs,
     rust-overlay,
-    flake-utils,
     crane,
   }: let
     supportedSystems = ["x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin"];
@@ -39,7 +37,7 @@
         inherit src;
         inherit (craneLib.crateNameFromCargoToml {inherit src;}) pname version;
 
-        buildInputs = pkgs.lib.optionals pkgs.stdenv.isDarwin [
+        buildInputs = pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
           pkgs.libiconv
           pkgs.apple-sdk_15
         ];
@@ -126,141 +124,137 @@
           Entrypoint = ["/bin/agemon"];
         };
       };
-  in
-    {
-      packages = forAllSystems (system:
-        {
-          default = mkPackage system;
-        }
-        // nixpkgs.lib.optionalAttrs (nixpkgs.lib.hasSuffix "-linux" system) {
-          docker = mkDockerImage system;
-        });
+  in {
+    packages = forAllSystems (system:
+      {
+        default = mkPackage system;
+      }
+      // nixpkgs.lib.optionalAttrs (nixpkgs.lib.hasSuffix "-linux" system) {
+        docker = mkDockerImage system;
+      });
 
-      checks = forAllSystems mkChecks;
+    checks = forAllSystems mkChecks;
 
-      homeManagerModules.default = {
-        config,
-        lib,
-        pkgs,
-        ...
-      }: let
-        cfg = config.services.agemon;
-      in {
-        options.services.agemon = {
-          enable = lib.mkEnableOption "agemon service";
+    homeManagerModules.default = {
+      config,
+      lib,
+      pkgs,
+      ...
+    }: let
+      cfg = config.services.agemon;
+    in {
+      options.services.agemon = {
+        enable = lib.mkEnableOption "agemon service";
 
-          package = lib.mkOption {
-            type = lib.types.package;
-            default = self.packages.${pkgs.system}.default;
-            description = "The agemon package to use.";
-          };
-
-          interval = lib.mkOption {
-            type = lib.types.ints.positive;
-            default = 15;
-            description = "Interval between metric collections in seconds.";
-          };
-
-          remoteWriteUrl = lib.mkOption {
-            type = lib.types.str;
-            default = "http://localhost:9090/api/v1/write";
-            description = "Prometheus remote write endpoint URL.";
-          };
-
-          username = lib.mkOption {
-            type = lib.types.nullOr lib.types.str;
-            default = null;
-            description = "Username for Basic authentication.";
-          };
-
-          passwordFile = lib.mkOption {
-            type = lib.types.nullOr lib.types.path;
-            default = null;
-            description = ''
-              Path to a file containing only the password for Basic authentication
-              (e.g. a sops-nix or agenix secret). A trailing newline is ignored.
-              Read at runtime, so the secret never enters the Nix store.
-            '';
-          };
-
-          environmentFile = lib.mkOption {
-            type = lib.types.nullOr lib.types.path;
-            default = null;
-            description = ''
-              Optional systemd EnvironmentFile with KEY=value lines, e.g.
-              AGEMON_REMOTE_WRITE_PASSWORD=secret. Use passwordFile for a raw secret.
-            '';
-          };
-
-          topProcesses = lib.mkOption {
-            type = lib.types.int;
-            default = 10;
-            description = "Number of top processes to report by CPU and memory (0 to disable).";
-          };
-
-          hostname = lib.mkOption {
-            type = lib.types.nullOr lib.types.str;
-            default = null;
-            description = "Value of the hostname label. Default is the system hostname.";
-          };
+        package = lib.mkOption {
+          type = lib.types.package;
+          default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+          description = "The agemon package to use.";
         };
 
-        config = lib.mkIf cfg.enable {
-          systemd.user.services.agemon = {
-            Unit = {
-              Description = "Agent Monitoring - push system metrics to Prometheus";
-            };
+        interval = lib.mkOption {
+          type = lib.types.ints.positive;
+          default = 15;
+          description = "Interval between metric collections in seconds.";
+        };
 
-            Service = {
-              Type = "simple";
-              EnvironmentFile = lib.optionals (cfg.environmentFile != null) [
-                cfg.environmentFile
-              ];
-              ExecStart = let
-                args =
-                  [
-                    "--interval"
-                    (toString cfg.interval)
-                    "--remote-write-url"
-                    cfg.remoteWriteUrl
-                    "--top-processes"
-                    (toString cfg.topProcesses)
-                  ]
-                  ++ lib.optionals (cfg.username != null) [
-                    "--username"
-                    cfg.username
-                  ]
-                  ++ lib.optionals (cfg.passwordFile != null) [
-                    "--password-file"
-                    (toString cfg.passwordFile)
-                  ]
-                  ++ lib.optionals (cfg.hostname != null) [
-                    "--hostname"
-                    cfg.hostname
-                  ];
-              in "${cfg.package}/bin/agemon ${lib.escapeShellArgs args}";
-              Restart = "on-failure";
-              RestartSec = 5;
-            };
+        remoteWriteUrl = lib.mkOption {
+          type = lib.types.str;
+          default = "http://localhost:9090/api/v1/write";
+          description = "Prometheus remote write endpoint URL.";
+        };
 
-            Install = {
-              WantedBy = ["default.target"];
-            };
+        username = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          description = "Username for Basic authentication.";
+        };
+
+        passwordFile = lib.mkOption {
+          type = lib.types.nullOr lib.types.path;
+          default = null;
+          description = ''
+            Path to a file containing only the password for Basic authentication
+            (e.g. a sops-nix or agenix secret). A trailing newline is ignored.
+            Read at runtime, so the secret never enters the Nix store.
+          '';
+        };
+
+        environmentFile = lib.mkOption {
+          type = lib.types.nullOr lib.types.path;
+          default = null;
+          description = ''
+            Optional systemd EnvironmentFile with KEY=value lines, e.g.
+            AGEMON_REMOTE_WRITE_PASSWORD=secret. Use passwordFile for a raw secret.
+          '';
+        };
+
+        topProcesses = lib.mkOption {
+          type = lib.types.ints.unsigned;
+          default = 10;
+          description = "Number of top processes to report by CPU and memory (0 to disable).";
+        };
+
+        hostname = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          description = "Value of the hostname label. Default is the system hostname.";
+        };
+      };
+
+      config = lib.mkIf cfg.enable {
+        systemd.user.services.agemon = {
+          Unit = {
+            Description = "Agent Monitoring - push system metrics to Prometheus";
+          };
+
+          Service = {
+            Type = "simple";
+            EnvironmentFile = lib.optionals (cfg.environmentFile != null) [
+              cfg.environmentFile
+            ];
+            ExecStart = let
+              args =
+                [
+                  "--interval"
+                  (toString cfg.interval)
+                  "--remote-write-url"
+                  cfg.remoteWriteUrl
+                  "--top-processes"
+                  (toString cfg.topProcesses)
+                ]
+                ++ lib.optionals (cfg.username != null) [
+                  "--username"
+                  cfg.username
+                ]
+                ++ lib.optionals (cfg.passwordFile != null) [
+                  "--password-file"
+                  (toString cfg.passwordFile)
+                ]
+                ++ lib.optionals (cfg.hostname != null) [
+                  "--hostname"
+                  cfg.hostname
+                ];
+            in "${cfg.package}/bin/agemon ${lib.escapeShellArgs args}";
+            Restart = "on-failure";
+            RestartSec = 5;
+          };
+
+          Install = {
+            WantedBy = ["default.target"];
           };
         };
       };
-    }
-    // flake-utils.lib.eachDefaultSystem (system: let
-      overlays = [(import rust-overlay)];
-      pkgs = import nixpkgs {
-        inherit system overlays;
-      };
+    };
+
+    devShells = forAllSystems (system: let
+      inherit (mkCrane system) pkgs;
 
       rustToolchainDev = pkgs.rust-bin.stable.latest.default.override {
         extensions = ["rust-src" "clippy"];
       };
     in {
-      devShells.default = pkgs.mkShell {
+      default = pkgs.mkShell {
         inputsFrom = [self.packages.${system}.default];
         buildInputs = [
           rustToolchainDev
@@ -280,10 +274,14 @@
           echo ""
         '';
       };
+    });
 
-      apps.default = {
+    apps = forAllSystems (system: {
+      default = {
         type = "app";
         program = "${self.packages.${system}.default}/bin/agemon";
+        meta.description = "Push system metrics to Prometheus remote write";
       };
     });
+  };
 }

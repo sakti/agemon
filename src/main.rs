@@ -24,18 +24,18 @@ const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VE
     version,
     about = "Agent monitoring - push system metrics to Prometheus remote write"
 )]
-pub struct Args {
+struct Args {
     /// Interval between metric collections in seconds (minimum 1)
     #[arg(short, long, default_value_t = 15, value_parser = clap::value_parser!(u64).range(1..))]
     interval: u64,
 
     /// Prometheus remote write endpoint URL
     #[arg(short, long, env = "AGEMON_REMOTE_WRITE_URL", default_value_t = String::from("http://localhost:9090/api/v1/write"))]
-    pub remote_write_url: String,
+    remote_write_url: String,
 
     /// Username for Basic authentication (optional)
     #[arg(short, long, env = "AGEMON_REMOTE_WRITE_USERNAME")]
-    pub username: Option<String>,
+    username: Option<String>,
 
     /// Password for Basic authentication (optional)
     #[arg(
@@ -44,11 +44,11 @@ pub struct Args {
         env = "AGEMON_REMOTE_WRITE_PASSWORD",
         conflicts_with = "password_file"
     )]
-    pub password: Option<String>,
+    password: Option<String>,
 
     /// File containing the password for Basic authentication (raw value, trailing newline ignored)
     #[arg(long, env = "AGEMON_REMOTE_WRITE_PASSWORD_FILE")]
-    pub password_file: Option<PathBuf>,
+    password_file: Option<PathBuf>,
 
     /// Number of top processes to report by CPU and memory (0 to disable)
     #[arg(short = 't', long, env = "AGEMON_TOP_PROCESSES", default_value_t = 10)]

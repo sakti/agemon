@@ -7,11 +7,11 @@ edition = "2024"
 base64 = "0.23.1"
 clap = { version = "4.5", features = ["derive", "env"] }
 miette = "7.6.0"
-prometheus_remote_write = { version = "0.2.1", default-features = false, features = ["http"] }
+prometheus_remote_write = { version = "0.2.1", default-features = false, features = ["compression"] }
 reqwest = { version = "0.13", features = ["blocking", "rustls"], default-features = false }
 sysinfo = { version = "0.40.1", default-features = false, features = ["component", "disk", "network", "system"] }
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "ansi", "std"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-procfs = { version = "0.18.0", default-features = false, features = ["flate2"] }
+procfs = { version = "0.18.0", default-features = false }

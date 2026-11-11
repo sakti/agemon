@@ -75,6 +75,48 @@ A lightweight agent that collects system metrics and pushes them to Prometheus v
 | `agemon_load_average_15m` | gauge | - | 15-minute load average |
 | `agemon_info` | gauge | `os_name`, `os_version`, `kernel_version`, `arch` | System information (always 1) |
 
+### Processes
+
+Emitted only when `--top-processes` is greater than `0`. Processes are grouped by name.
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `agemon_process_count` | gauge | - | Number of processes (threads are not counted) |
+| `agemon_process_cpu_usage_percent` | gauge | `process` | CPU usage of the top N process names (100 = one full core). The remaining processes are summed in `process="other"` |
+| `agemon_process_memory_bytes` | gauge | `process` | Resident memory of the top N process names. The remaining processes are summed in `process="other"` |
+
+### Linux only (`/proc`)
+
+A metric is skipped when its `/proc` file is not available (for example, PSI on old kernels).
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `agemon_tcp_connections` | gauge | `state` | IPv4 TCP sockets by state (`established`, `listen`, `time_wait`, `close_wait`, `other`) |
+| `agemon_tcp6_connections` | gauge | `state` | IPv6 TCP sockets by state |
+| `agemon_file_descriptors_allocated` | gauge | - | Allocated file handles (`/proc/sys/fs/file-nr`) |
+| `agemon_file_descriptors_max` | gauge | - | Maximum number of file handles |
+| `agemon_context_switches_total` | counter | - | Context switches since boot |
+| `agemon_processes_forked_total` | counter | - | Processes and threads created since boot |
+| `agemon_procs_running` | gauge | - | Runnable processes |
+| `agemon_procs_blocked` | gauge | - | Processes blocked on I/O |
+| `agemon_psi_cpu_some_avg10`, `_avg60`, `_avg300` | gauge | - | CPU pressure stall averages (percent) |
+| `agemon_psi_cpu_some_total_us` | counter | - | Total CPU stall time in microseconds |
+| `agemon_psi_memory_{some,full}_avg10`, `_avg60`, `_avg300` | gauge | - | Memory pressure stall averages (percent) |
+| `agemon_psi_memory_{some,full}_total_us` | counter | - | Total memory stall time in microseconds |
+| `agemon_psi_io_{some,full}_avg10`, `_avg60`, `_avg300` | gauge | - | I/O pressure stall averages (percent) |
+| `agemon_psi_io_{some,full}_total_us` | counter | - | Total I/O stall time in microseconds |
+| `agemon_vmstat_pgfault_total`, `agemon_vmstat_pgmajfault_total` | counter | - | Page faults and major page faults |
+| `agemon_vmstat_pgpgin_total`, `agemon_vmstat_pgpgout_total` | counter | - | Pages paged in and out |
+| `agemon_vmstat_pswpin_total`, `agemon_vmstat_pswpout_total` | counter | - | Pages swapped in and out |
+| `agemon_vmstat_oom_kill_total` | counter | - | OOM kills |
+| `agemon_tcp_retrans_segs_total` | counter | - | TCP segments retransmitted |
+| `agemon_tcp_in_segs_total`, `agemon_tcp_out_segs_total` | counter | - | TCP segments received and sent |
+| `agemon_tcp_active_opens_total`, `agemon_tcp_passive_opens_total` | counter | - | TCP connections opened actively and passively |
+| `agemon_tcp_curr_estab` | gauge | - | Currently established TCP connections |
+| `agemon_udp_in_datagrams_total`, `agemon_udp_out_datagrams_total` | counter | - | UDP datagrams received and sent |
+| `agemon_udp_in_errors_total` | counter | - | UDP receive errors |
+| `agemon_entropy_available` | gauge | - | Available entropy in bits |
+
 All metrics include a `hostname` label.
 
 ## Installation
@@ -138,6 +180,11 @@ export AGEMON_REMOTE_WRITE_PASSWORD=mypass
 agemon -i 30
 ```
 
+### Logging
+
+AgeMon logs at `info` level by default. Set `RUST_LOG` to change the level, for example
+`RUST_LOG=agemon=debug` to see skipped `/proc` sources and push response statuses.
+
 ## Docker
 
 On Linux, the flake builds a static (musl) Docker image:
@@ -187,6 +234,8 @@ Then enable the service:
     username = "myuser";
     passwordFile = "/run/secrets/agemon-password"; # raw secret, e.g. from sops-nix/agenix
     # hostname = "my-host"; # optional, default is the system hostname
+    # topProcesses = 10; # optional, 0 disables the process metrics
+    # environmentFile = "/run/secrets/agemon-env"; # optional, KEY=value lines
   };
 }
 ```
@@ -195,13 +244,15 @@ Then enable the service:
 
 Import `grafana-dashboard.json` into Grafana for a pre-built dashboard with:
 
-- System overview (CPU, memory, swap, uptime, cores)
+- System overview (CPU, memory, swap, uptime, cores, process count)
 - CPU usage and per-core breakdown
 - Load averages (1m, 5m, 15m)
 - Memory and swap usage over time
 - Disk usage by mount point
 - Disk I/O read/write rates
 - Network receive/transmit rates, packets, and errors
+- Top processes by CPU and memory
+- Temperature sensors
 
 The dashboard includes variables for datasource and hostname filtering.
 
@@ -226,3 +277,12 @@ Check formatting without applying changes:
 ```bash
 cargo fmt --check
 ```
+
+### Tests and lints
+
+```bash
+cargo test
+cargo clippy --all-targets -- -D warnings
+```
+
+`nix flake check` runs the build, the tests, clippy and the format check together.
