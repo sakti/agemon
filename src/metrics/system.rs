@@ -29,6 +29,7 @@ pub fn collect(sink: &mut MetricSink) {
             ("os_version", os_version.as_str()),
             ("kernel_version", kernel_version.as_str()),
             ("arch", arch.as_str()),
+            ("version", env!("CARGO_PKG_VERSION")),
         ],
     );
 }
@@ -70,6 +71,10 @@ mod tests {
         assert!(get_label_value(ts, "os_name").is_some());
         assert!(get_label_value(ts, "arch").is_some());
         assert!(get_label_value(ts, "kernel_version").is_some());
+        assert_eq!(
+            get_label_value(ts, "version"),
+            Some(env!("CARGO_PKG_VERSION"))
+        );
     }
 
     #[test]

@@ -2083,14 +2083,14 @@
         {
           "editorMode": "code",
           "exemplar": false,
-          "expr": "agemon_temperature_max_celsius{hostname=~\"$hostname\"}",
+          "expr": "agemon_temperature_highest_celsius{hostname=~\"$hostname\"}",
           "instant": true,
           "legendFormat": "{{sensor}}",
           "range": false,
           "refId": "A"
         }
       ],
-      "title": "Max Temperature",
+      "title": "Highest Temperature",
       "type": "stat"
     }
   ],

@@ -62,6 +62,25 @@ impl<'a> MetricSink<'a> {
         });
     }
 
+    /// Unwraps the read of a metric source and records whether it succeeded in
+    /// `agemon_source_success{source}`, so a failing source is visible without the logs.
+    #[cfg(target_os = "linux")]
+    pub fn record_source<T, E: std::fmt::Display>(
+        &mut self,
+        source: &str,
+        result: Result<T, E>,
+    ) -> Option<T> {
+        let value = result
+            .inspect_err(|err| tracing::debug!("failed to read {source}: {err}"))
+            .ok();
+        self.record_with(
+            "agemon_source_success",
+            if value.is_some() { 1.0 } else { 0.0 },
+            &[("source", source)],
+        );
+        value
+    }
+
     pub fn into_series(self) -> Vec<TimeSeries> {
         self.series
     }
@@ -208,6 +227,25 @@ mod tests {
         assert_eq!(get_label_value(ts, "env"), Some("prod"));
         assert_eq!(get_label_value(ts, "region"), Some("us-east"));
         assert_eq!(ts.samples[0].value, 99.5);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_record_source_reports_success_and_failure() {
+        let mut sink = MetricSink::new(1000, "testhost");
+        assert_eq!(sink.record_source("/ok", Ok::<_, String>(7)), Some(7));
+        assert_eq!(
+            sink.record_source("/bad", Err::<u8, _>("boom".to_string())),
+            None
+        );
+        let series = sink.into_series();
+
+        let success = find_metric(&series, "agemon_source_success");
+        assert_eq!(success.len(), 2);
+        assert_eq!(get_label_value(success[0], "source"), Some("/ok"));
+        assert_eq!(success[0].samples[0].value, 1.0);
+        assert_eq!(get_label_value(success[1], "source"), Some("/bad"));
+        assert_eq!(success[1].samples[0].value, 0.0);
     }
 
     #[test]

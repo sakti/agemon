@@ -11,6 +11,7 @@ A lightweight agent that collects system metrics and pushes them to Prometheus v
 | `agemon_cpu_usage_percent` | gauge | - | Global CPU usage percentage (0-100) |
 | `agemon_cpu_count` | gauge | - | Number of logical CPU cores |
 | `agemon_cpu_core_usage_percent` | gauge | `cpu` | Per-core CPU usage percentage |
+| `agemon_cpu_seconds_total` | counter | `mode` | CPU time of all cores together, by mode (`user`, `nice`, `system`, `idle`, `iowait`, `irq`, `softirq`, `steal`), from `/proc/stat` (Linux only) |
 
 ### Memory
 
@@ -35,15 +36,28 @@ A lightweight agent that collects system metrics and pushes them to Prometheus v
 | `agemon_disk_used_bytes` | gauge | `mount_point`, `device`, `fs_type` | Used disk space in bytes |
 | `agemon_disk_usage_ratio` | gauge | `mount_point`, `device`, `fs_type` | Disk usage ratio (0.0-1.0) |
 | `agemon_disk_is_removable` | gauge | `mount_point`, `device`, `fs_type` | Whether disk is removable (1=yes, 0=no) |
+| `agemon_disk_is_read_only` | gauge | `mount_point`, `device`, `fs_type` | Whether the filesystem is mounted read-only (1=yes, 0=no) |
+| `agemon_disk_inodes_total` | gauge | `mount_point`, `device`, `fs_type` | Total inodes of the filesystem (not emitted for filesystems that report 0, for example btrfs and vfat) |
+| `agemon_disk_inodes_free` | gauge | `mount_point`, `device`, `fs_type` | Free inodes of the filesystem |
+
+On Linux, `tmpfs` mounts such as `/tmp` and `/dev/shm` are included. Network filesystems (NFS, CIFS) are not.
 
 ### Disk I/O
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `agemon_disk_io_read_bytes_total` | counter | `device` | Bytes read from the block device since boot, from `/proc/diskstats` (Linux only; partitions are listed alongside their disk, so don't sum across `device`) |
-| `agemon_disk_io_written_bytes_total` | counter | `device` | Bytes written to the block device since boot, from `/proc/diskstats` (Linux only) |
+| `agemon_disk_io_read_bytes_total` | counter | `device` | Bytes read from the block device since boot |
+| `agemon_disk_io_written_bytes_total` | counter | `device` | Bytes written to the block device since boot |
+| `agemon_disk_io_reads_completed_total` | counter | `device` | Read operations completed |
+| `agemon_disk_io_writes_completed_total` | counter | `device` | Write operations completed |
+| `agemon_disk_io_read_time_seconds_total` | counter | `device` | Time spent on read operations |
+| `agemon_disk_io_write_time_seconds_total` | counter | `device` | Time spent on write operations |
+| `agemon_disk_io_time_seconds_total` | counter | `device` | Time during which the device had I/O in progress (the rate is the device utilisation) |
+| `agemon_disk_io_time_weighted_seconds_total` | counter | `device` | Weighted I/O time (the rate is the average queue length) |
 | `agemon_disk_io_read_bytes_per_sec` | gauge | - | Bytes read per second by all processes, averaged over the last collection interval |
 | `agemon_disk_io_written_bytes_per_sec` | gauge | - | Bytes written per second by all processes, averaged over the last collection interval |
+
+The metrics with a `device` label come from `/proc/diskstats` (Linux only). Only whole devices are reported: partitions and `loop`, `ram` and `zram` devices are skipped.
 
 ### Network
 
@@ -55,13 +69,18 @@ A lightweight agent that collects system metrics and pushes them to Prometheus v
 | `agemon_network_transmitted_packets_total` | counter | `interface` | Total packets transmitted on interface |
 | `agemon_network_received_errors_total` | counter | `interface` | Total receive errors on interface |
 | `agemon_network_transmitted_errors_total` | counter | `interface` | Total transmit errors on interface |
+| `agemon_network_received_dropped_total` | counter | `interface` | Received packets dropped (Linux only) |
+| `agemon_network_transmitted_dropped_total` | counter | `interface` | Transmitted packets dropped (Linux only) |
+| `agemon_network_up` | gauge | `interface` | 1 when the operational state of the interface is `up` (Linux only; loopback and tunnel interfaces usually report `unknown`, which gives 0) |
+| `agemon_network_carrier` | gauge | `interface` | 1 when the interface has a link (Linux only; not emitted when the interface is administratively down) |
+| `agemon_network_speed_bytes` | gauge | `interface` | Link speed in bytes per second (Linux only; not emitted when the interface reports no speed) |
 
 ### Temperature
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
 | `agemon_temperature_celsius` | gauge | `sensor` | Current temperature of the sensor |
-| `agemon_temperature_max_celsius` | gauge | `sensor` | Maximum observed temperature of the sensor |
+| `agemon_temperature_highest_celsius` | gauge | `sensor` | Highest temperature that was measured on the sensor (this is not a limit of the sensor) |
 | `agemon_temperature_critical_celsius` | gauge | `sensor` | Critical threshold temperature (only emitted if available) |
 
 ### System
@@ -73,7 +92,7 @@ A lightweight agent that collects system metrics and pushes them to Prometheus v
 | `agemon_load_average_1m` | gauge | - | 1-minute load average |
 | `agemon_load_average_5m` | gauge | - | 5-minute load average |
 | `agemon_load_average_15m` | gauge | - | 15-minute load average |
-| `agemon_info` | gauge | `os_name`, `os_version`, `kernel_version`, `arch` | System information (always 1) |
+| `agemon_info` | gauge | `os_name`, `os_version`, `kernel_version`, `arch`, `version` | System information (always 1). `version` is the AgeMon version. |
 
 ### Processes
 
@@ -87,10 +106,11 @@ Emitted only when `--top-processes` is greater than `0`. Processes are grouped b
 
 ### Linux only (`/proc`)
 
-A metric is skipped when its `/proc` file is not available (for example, PSI on old kernels).
+A metric is skipped when its source is not available (for example, PSI on old kernels). In that case `agemon_source_success` for the source is `0`.
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
+| `agemon_source_success` | gauge | `source` | 1 when the last read of the source was successful, 0 when it failed. `source` is the path of the file (for example `/proc/stat`) or `adjtimex`. |
 | `agemon_tcp_connections` | gauge | `state` | IPv4 TCP sockets by state (`established`, `listen`, `time_wait`, `close_wait`, `other`) |
 | `agemon_tcp6_connections` | gauge | `state` | IPv6 TCP sockets by state |
 | `agemon_file_descriptors_allocated` | gauge | - | Allocated file handles (`/proc/sys/fs/file-nr`) |
@@ -100,11 +120,11 @@ A metric is skipped when its `/proc` file is not available (for example, PSI on 
 | `agemon_procs_running` | gauge | - | Runnable processes |
 | `agemon_procs_blocked` | gauge | - | Processes blocked on I/O |
 | `agemon_psi_cpu_some_avg10`, `_avg60`, `_avg300` | gauge | - | CPU pressure stall averages (percent) |
-| `agemon_psi_cpu_some_total_us` | counter | - | Total CPU stall time in microseconds |
+| `agemon_psi_cpu_some_seconds_total` | counter | - | Total CPU stall time in seconds |
 | `agemon_psi_memory_{some,full}_avg10`, `_avg60`, `_avg300` | gauge | - | Memory pressure stall averages (percent) |
-| `agemon_psi_memory_{some,full}_total_us` | counter | - | Total memory stall time in microseconds |
+| `agemon_psi_memory_{some,full}_seconds_total` | counter | - | Total memory stall time in seconds |
 | `agemon_psi_io_{some,full}_avg10`, `_avg60`, `_avg300` | gauge | - | I/O pressure stall averages (percent) |
-| `agemon_psi_io_{some,full}_total_us` | counter | - | Total I/O stall time in microseconds |
+| `agemon_psi_io_{some,full}_seconds_total` | counter | - | Total I/O stall time in seconds |
 | `agemon_vmstat_pgfault_total`, `agemon_vmstat_pgmajfault_total` | counter | - | Page faults and major page faults |
 | `agemon_vmstat_pgpgin_total`, `agemon_vmstat_pgpgout_total` | counter | - | Pages paged in and out |
 | `agemon_vmstat_pswpin_total`, `agemon_vmstat_pswpout_total` | counter | - | Pages swapped in and out |
@@ -116,6 +136,9 @@ A metric is skipped when its `/proc` file is not available (for example, PSI on 
 | `agemon_udp_in_datagrams_total`, `agemon_udp_out_datagrams_total` | counter | - | UDP datagrams received and sent |
 | `agemon_udp_in_errors_total` | counter | - | UDP receive errors |
 | `agemon_entropy_available` | gauge | - | Available entropy in bits |
+| `agemon_timex_sync_status` | gauge | - | 1 when the kernel reports that the clock is synchronised (by NTP, chrony or systemd-timesyncd), 0 when it is not |
+| `agemon_timex_offset_seconds` | gauge | - | Offset between the local clock and the time source |
+| `agemon_timex_maxerror_seconds` | gauge | - | Maximum error of the clock. It increases continuously when the clock is not synchronised. |
 
 All metrics include a `hostname` label.
 

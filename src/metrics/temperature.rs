@@ -11,7 +11,7 @@ pub fn collect(components: &Components, sink: &mut MetricSink) {
         }
 
         if let Some(max) = component.max() {
-            sink.record_with("agemon_temperature_max_celsius", max as f64, &labels);
+            sink.record_with("agemon_temperature_highest_celsius", max as f64, &labels);
         }
 
         if let Some(critical) = component.critical() {

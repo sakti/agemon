@@ -1,8 +1,6 @@
 use std::time::Duration;
 
 use sysinfo::{Disks, System};
-#[cfg(target_os = "linux")]
-use tracing::debug;
 
 use super::MetricSink;
 
@@ -44,7 +42,43 @@ pub fn collect(disks: &Disks, sink: &mut MetricSink) {
             if disk.is_removable() { 1.0 } else { 0.0 },
             &labels,
         );
+        sink.record_with(
+            "agemon_disk_is_read_only",
+            if disk.is_read_only() { 1.0 } else { 0.0 },
+            &labels,
+        );
+
+        #[cfg(unix)]
+        if let Some((total, free)) = inode_counts(disk.mount_point()) {
+            sink.record_with("agemon_disk_inodes_total", total as f64, &labels);
+            sink.record_with("agemon_disk_inodes_free", free as f64, &labels);
+        }
     }
+}
+
+/// Total and free inodes of the filesystem at `mount_point`.
+///
+/// Returns `None` when `statvfs` fails or when the filesystem has no fixed inode
+/// table and reports a total of 0 (for example btrfs and vfat).
+#[cfg(unix)]
+fn inode_counts(mount_point: &std::path::Path) -> Option<(u64, u64)> {
+    use std::{ffi::CString, mem::MaybeUninit, os::unix::ffi::OsStrExt};
+
+    let path = CString::new(mount_point.as_os_str().as_bytes()).ok()?;
+    let mut stat = MaybeUninit::<libc::statvfs>::uninit();
+    // SAFETY: `path` is a valid NUL-terminated string and `stat` points to writable
+    // memory of the right size. `statvfs` fills it completely when it returns 0.
+    let stat = unsafe {
+        if libc::statvfs(path.as_ptr(), stat.as_mut_ptr()) != 0 {
+            return None;
+        }
+        stat.assume_init()
+    };
+
+    // The field types differ between platforms.
+    #[allow(clippy::unnecessary_cast)]
+    let (total, free) = (stat.f_files as u64, stat.f_ffree as u64);
+    (total > 0).then_some((total, free))
 }
 
 /// Per-second disk I/O rates, summed over all processes.
@@ -72,25 +106,40 @@ pub fn collect_io(sys: &System, elapsed: Duration, sink: &mut MetricSink) {
     sink.record("agemon_disk_io_written_bytes_per_sec", written_rate);
 }
 
-/// Monotonic per-device byte counters from `/proc/diskstats`.
+/// Whether a `/proc/diskstats` entry is a real whole device.
+///
+/// Partitions are skipped because their parent disk already counts their I/O, so a
+/// sum across `device` would double-count. `loop`, `ram` and `zram` devices are not
+/// physical storage. A whole device has a directory in `/sys/block` (where a `/` in
+/// the name is written as `!`); a partition does not.
+#[cfg(target_os = "linux")]
+fn is_whole_disk(name: &str) -> bool {
+    if ["loop", "ram", "zram"]
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
+    {
+        return false;
+    }
+    std::path::Path::new("/sys/block")
+        .join(name.replace('/', "!"))
+        .exists()
+}
+
+/// Monotonic per-device counters from `/proc/diskstats`.
 ///
 /// The kernel always reports sectors in 512-byte units, regardless of the device's
-/// physical sector size. Partitions are reported alongside their parent disk, so
-/// summing across `device` double-counts.
+/// physical sector size, and times in milliseconds.
 #[cfg(target_os = "linux")]
 pub fn collect_diskstats(sink: &mut MetricSink) {
     const SECTOR_SIZE: f64 = 512.0;
+    const MILLIS_PER_SEC: f64 = 1e3;
 
-    let stats = match procfs::diskstats() {
-        Ok(stats) => stats,
-        Err(err) => {
-            debug!("failed to read /proc/diskstats: {err}");
-            return;
-        }
+    let Some(stats) = sink.record_source("/proc/diskstats", procfs::diskstats()) else {
+        return;
     };
 
     for stat in stats {
-        if stat.name.starts_with("loop") || stat.name.starts_with("ram") {
+        if !is_whole_disk(&stat.name) {
             continue;
         }
         let labels = [("device", stat.name.as_str())];
@@ -102,6 +151,36 @@ pub fn collect_diskstats(sink: &mut MetricSink) {
         sink.record_with(
             "agemon_disk_io_written_bytes_total",
             stat.sectors_written as f64 * SECTOR_SIZE,
+            &labels,
+        );
+        sink.record_with(
+            "agemon_disk_io_reads_completed_total",
+            stat.reads as f64,
+            &labels,
+        );
+        sink.record_with(
+            "agemon_disk_io_writes_completed_total",
+            stat.writes as f64,
+            &labels,
+        );
+        sink.record_with(
+            "agemon_disk_io_read_time_seconds_total",
+            stat.time_reading as f64 / MILLIS_PER_SEC,
+            &labels,
+        );
+        sink.record_with(
+            "agemon_disk_io_write_time_seconds_total",
+            stat.time_writing as f64 / MILLIS_PER_SEC,
+            &labels,
+        );
+        sink.record_with(
+            "agemon_disk_io_time_seconds_total",
+            stat.time_in_progress as f64 / MILLIS_PER_SEC,
+            &labels,
+        );
+        sink.record_with(
+            "agemon_disk_io_time_weighted_seconds_total",
+            stat.weighted_time_in_progress as f64 / MILLIS_PER_SEC,
             &labels,
         );
     }
@@ -129,16 +208,44 @@ mod tests {
     }
 
     #[test]
-    fn test_five_metrics_per_disk() {
+    fn test_one_series_per_disk_for_each_space_metric() {
         let disks = Disks::new_with_refreshed_list().unwrap();
         let mut sink = MetricSink::new(1000, "testhost");
         collect(&disks, &mut sink);
         let timeseries = sink.into_series();
 
-        let disk_count = disks.len();
-        if disk_count > 0 {
-            assert_eq!(timeseries.len(), disk_count * 5);
+        for name in [
+            "agemon_disk_total_bytes",
+            "agemon_disk_available_bytes",
+            "agemon_disk_used_bytes",
+            "agemon_disk_usage_ratio",
+            "agemon_disk_is_removable",
+            "agemon_disk_is_read_only",
+        ] {
+            assert_eq!(find_metric(&timeseries, name).len(), disks.len(), "{name}");
         }
+    }
+
+    #[test]
+    fn test_inode_metrics_are_paired_and_consistent() {
+        let disks = Disks::new_with_refreshed_list().unwrap();
+        let mut sink = MetricSink::new(1000, "testhost");
+        collect(&disks, &mut sink);
+        let timeseries = sink.into_series();
+
+        let total = find_metric(&timeseries, "agemon_disk_inodes_total");
+        let free = find_metric(&timeseries, "agemon_disk_inodes_free");
+        assert_eq!(total.len(), free.len());
+        for (total, free) in total.iter().zip(free.iter()) {
+            assert!(total.samples[0].value > 0.0);
+            assert!(free.samples[0].value <= total.samples[0].value);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_inode_counts_missing_path_is_none() {
+        assert!(inode_counts(std::path::Path::new("/nonexistent/agemon-mount")).is_none());
     }
 
     #[test]
@@ -184,7 +291,26 @@ mod tests {
         assert_eq!(read.len(), written.len());
         for ts in read.iter().chain(written.iter()) {
             let device = get_label_value(ts, "device").expect("device label");
-            assert!(!device.starts_with("loop") && !device.starts_with("ram"));
+            assert!(is_whole_disk(device), "{device} is not a whole disk");
+        }
+
+        for name in [
+            "agemon_disk_io_reads_completed_total",
+            "agemon_disk_io_writes_completed_total",
+            "agemon_disk_io_read_time_seconds_total",
+            "agemon_disk_io_write_time_seconds_total",
+            "agemon_disk_io_time_seconds_total",
+            "agemon_disk_io_time_weighted_seconds_total",
+        ] {
+            assert_eq!(find_metric(&timeseries, name).len(), read.len(), "{name}");
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_virtual_devices_are_not_whole_disks() {
+        for name in ["loop0", "ram0", "zram0", "agemon-no-such-device"] {
+            assert!(!is_whole_disk(name), "{name}");
         }
     }
 }
