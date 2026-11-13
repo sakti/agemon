@@ -16,6 +16,8 @@ pub fn collect(sink: &mut MetricSink) {
     collect_psi(sink);
     collect_vmstat(sink);
     collect_snmp(sink);
+    collect_netstat(sink);
+    collect_conntrack(sink);
     collect_entropy(sink);
     collect_net_dev(sink);
     collect_timex(sink);
@@ -187,7 +189,8 @@ fn collect_vmstat(sink: &mut MetricSink) {
     }
 }
 
-/// Parses `/proc/net/snmp` into a map with keys such as `Tcp:RetransSegs`.
+/// Parses `/proc/net/snmp` or `/proc/net/netstat` into a map with keys such as
+/// `Tcp:RetransSegs` or `TcpExt:ListenOverflows`.
 ///
 /// The file is a list of line pairs: a header line with the field names and a line
 /// with the values, both with the protocol as prefix. The parse is done here and not
@@ -235,6 +238,66 @@ fn collect_snmp(sink: &mut MetricSink) {
     ] {
         if let Some(&value) = snmp.get(key) {
             sink.record(metric_name, value);
+        }
+    }
+}
+
+/// Listen queue counters from `/proc/net/netstat`. They count the connections that were
+/// dropped because the accept queue of a listening socket was full.
+fn collect_netstat(sink: &mut MetricSink) {
+    const SOURCE: &str = "/proc/net/netstat";
+
+    let Some(contents) = sink.record_source(SOURCE, fs::read_to_string(SOURCE)) else {
+        return;
+    };
+    let netstat = parse_snmp(&contents);
+
+    for (key, metric_name) in [
+        (
+            "TcpExt:ListenOverflows",
+            "agemon_tcp_listen_overflows_total",
+        ),
+        ("TcpExt:ListenDrops", "agemon_tcp_listen_drops_total"),
+    ] {
+        if let Some(&value) = netstat.get(key) {
+            sink.record(metric_name, value);
+        }
+    }
+}
+
+/// Reads a number from a file. `Ok(None)` means that the file does not exist.
+fn read_optional_number(path: &str) -> io::Result<Option<f64>> {
+    match fs::read_to_string(path) {
+        Ok(contents) => contents
+            .trim()
+            .parse()
+            .map(Some)
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err)),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err),
+    }
+}
+
+/// Connection tracking table use. The files exist only when the `nf_conntrack` module is
+/// loaded; without them the metrics and `agemon_source_success` are not reported.
+fn collect_conntrack(sink: &mut MetricSink) {
+    for (source, metric_name) in [
+        (
+            "/proc/sys/net/netfilter/nf_conntrack_count",
+            "agemon_conntrack_entries",
+        ),
+        (
+            "/proc/sys/net/netfilter/nf_conntrack_max",
+            "agemon_conntrack_entries_limit",
+        ),
+    ] {
+        match read_optional_number(source) {
+            Ok(None) => {}
+            result => {
+                if let Some(Some(value)) = sink.record_source(source, result) {
+                    sink.record(metric_name, value);
+                }
+            }
         }
     }
 }
@@ -418,6 +481,60 @@ mod tests {
             "agemon_udp_in_datagrams_total",
         ] {
             assert_eq!(find_metric(&timeseries, name).len(), 1, "{name}");
+        }
+    }
+
+    #[test]
+    fn test_parse_netstat_listen_counters() {
+        let netstat = parse_snmp(
+            "TcpExt: SyncookiesSent ListenOverflows ListenDrops\n\
+             TcpExt: 0 12 15\n\
+             IpExt: InNoRoutes InOctets\n\
+             IpExt: 0 123456\n",
+        );
+        assert_eq!(netstat.get("TcpExt:ListenOverflows"), Some(&12.0));
+        assert_eq!(netstat.get("TcpExt:ListenDrops"), Some(&15.0));
+        assert_eq!(netstat.get("IpExt:InOctets"), Some(&123456.0));
+    }
+
+    #[test]
+    fn test_netstat_metrics_are_collected() {
+        let timeseries = collected();
+        for name in [
+            "agemon_tcp_listen_overflows_total",
+            "agemon_tcp_listen_drops_total",
+        ] {
+            assert_eq!(find_metric(&timeseries, name).len(), 1, "{name}");
+        }
+    }
+
+    #[test]
+    fn test_read_optional_number() {
+        let dir = std::env::temp_dir().join(format!("agemon-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("number");
+        let path_str = path.to_str().unwrap();
+
+        fs::write(&path, "262144\n").unwrap();
+        assert_eq!(read_optional_number(path_str).unwrap(), Some(262144.0));
+
+        fs::write(&path, "not a number\n").unwrap();
+        assert!(read_optional_number(path_str).is_err());
+
+        fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(read_optional_number(path_str).unwrap(), None);
+    }
+
+    #[test]
+    fn test_conntrack_metrics_are_paired() {
+        let timeseries = collected();
+        let entries = find_metric(&timeseries, "agemon_conntrack_entries");
+        let limit = find_metric(&timeseries, "agemon_conntrack_entries_limit");
+        assert_eq!(entries.len(), limit.len());
+        assert!(entries.len() <= 1);
+        if Path::new("/proc/sys/net/netfilter/nf_conntrack_count").exists() {
+            assert_eq!(entries.len(), 1);
+            assert!(limit[0].samples[0].value > 0.0);
         }
     }
 

@@ -135,6 +135,10 @@ A metric is skipped when its source is not available (for example, PSI on old ke
 | `agemon_tcp_curr_estab` | gauge | - | Currently established TCP connections |
 | `agemon_udp_in_datagrams_total`, `agemon_udp_out_datagrams_total` | counter | - | UDP datagrams received and sent |
 | `agemon_udp_in_errors_total` | counter | - | UDP receive errors |
+| `agemon_tcp_listen_overflows_total` | counter | - | Connections dropped because the accept queue of a listening socket was full (`TcpExt:ListenOverflows` in `/proc/net/netstat`) |
+| `agemon_tcp_listen_drops_total` | counter | - | Connections dropped by a listening socket for any reason, overflows included (`TcpExt:ListenDrops`) |
+| `agemon_conntrack_entries` | gauge | - | Entries in the connection tracking table (`/proc/sys/net/netfilter/nf_conntrack_count`). Only when the `nf_conntrack` module is loaded. |
+| `agemon_conntrack_entries_limit` | gauge | - | Size limit of the connection tracking table (`nf_conntrack_max`). New connections are dropped when the table is full. |
 | `agemon_entropy_available` | gauge | - | Available entropy in bits |
 | `agemon_timex_sync_status` | gauge | - | 1 when the kernel reports that the clock is synchronised (by NTP, chrony or systemd-timesyncd), 0 when it is not |
 | `agemon_timex_offset_seconds` | gauge | - | Offset between the local clock and the time source |
