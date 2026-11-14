@@ -760,6 +760,467 @@
         "x": 0,
         "y": 30
       },
+      "id": 32,
+      "panels": [],
+      "title": "CPU Throttling Signals",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "orange",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 31
+      },
+      "id": 33,
+      "options": {
+        "legend": {
+          "calcs": ["mean", "max"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.4.1",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "100 * sum by (hostname) (rate(agemon_cpu_seconds_total{hostname=~\"$hostname\", mode=\"steal\"}[5m])) / sum by (hostname) (rate(agemon_cpu_seconds_total{hostname=~\"$hostname\"}[5m]))",
+          "legendFormat": "{{hostname}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "CPU Steal",
+      "type": "timeseries",
+      "description": "Part of the CPU time that the hypervisor gave to other virtual machines. A value that stays above 5% shows that the hypervisor throttles this host. Linux only."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "orange",
+                "value": 10
+              },
+              {
+                "color": "red",
+                "value": 25
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 31
+      },
+      "id": 34,
+      "options": {
+        "legend": {
+          "calcs": ["mean", "max"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.4.1",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "agemon_psi_cpu_some_avg10{hostname=~\"$hostname\"}",
+          "legendFormat": "{{hostname}} avg10",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "editorMode": "code",
+          "expr": "agemon_psi_cpu_some_avg60{hostname=~\"$hostname\"}",
+          "legendFormat": "{{hostname}} avg60",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "editorMode": "code",
+          "expr": "agemon_psi_cpu_some_avg300{hostname=~\"$hostname\"}",
+          "legendFormat": "{{hostname}} avg300",
+          "range": true,
+          "refId": "C"
+        }
+      ],
+      "title": "CPU Pressure (PSI)",
+      "type": "timeseries",
+      "description": "Part of the time in which one task or more waited for CPU time. This shows CPU contention for the full system. It does not show the cause or the cgroup. Linux only."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [10, 10],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 39
+      },
+      "id": 35,
+      "options": {
+        "legend": {
+          "calcs": ["mean", "max"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.4.1",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "agemon_procs_running{hostname=~\"$hostname\"}",
+          "legendFormat": "{{hostname}} running",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "editorMode": "code",
+          "expr": "agemon_procs_blocked{hostname=~\"$hostname\"}",
+          "legendFormat": "{{hostname}} blocked",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "editorMode": "code",
+          "expr": "agemon_cpu_count{hostname=~\"$hostname\"}",
+          "legendFormat": "{{hostname}} cores",
+          "range": true,
+          "refId": "C"
+        }
+      ],
+      "title": "Run Queue and CPU Cores",
+      "type": "timeseries",
+      "description": "Runnable processes compared with the number of CPU cores. If the runnable processes stay above the number of cores, tasks wait for CPU time. Linux only."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "orange",
+                "value": 90
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 39
+      },
+      "id": 36,
+      "options": {
+        "legend": {
+          "calcs": ["mean", "max"],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.4.1",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "100 * agemon_temperature_celsius{hostname=~\"$hostname\"} / on (hostname, sensor) agemon_temperature_critical_celsius{hostname=~\"$hostname\"}",
+          "legendFormat": "{{hostname}} {{sensor}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Temperature Compared With Critical Limit",
+      "type": "timeseries",
+      "description": "Sensor temperature as a percentage of its critical limit. A value near 100% shows a risk of thermal throttling. It is not proof that throttling occurred. Only sensors that report a critical limit are shown."
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 47
+      },
       "id": 12,
       "panels": [],
       "title": "Memory",
@@ -850,7 +1311,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 31
+        "y": 48
       },
       "id": 13,
       "options": {
@@ -949,7 +1410,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 31
+        "y": 48
       },
       "id": 14,
       "options": {
@@ -992,7 +1453,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 39
+        "y": 56
       },
       "id": 15,
       "panels": [],
@@ -1037,7 +1498,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 40
+        "y": 57
       },
       "id": 16,
       "options": {
@@ -1135,7 +1596,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 40
+        "y": 57
       },
       "id": 17,
       "options": {
@@ -1224,7 +1685,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 48
+        "y": 65
       },
       "id": 23,
       "options": {
@@ -1313,7 +1774,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 48
+        "y": 65
       },
       "id": 24,
       "options": {
@@ -1346,7 +1807,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 56
+        "y": 73
       },
       "id": 18,
       "panels": [],
@@ -1415,7 +1876,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 57
+        "y": 74
       },
       "id": 19,
       "options": {
@@ -1504,7 +1965,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 57
+        "y": 74
       },
       "id": 20,
       "options": {
@@ -1593,7 +2054,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 65
+        "y": 82
       },
       "id": 21,
       "options": {
@@ -1691,7 +2152,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 65
+        "y": 82
       },
       "id": 22,
       "options": {
@@ -1729,7 +2190,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 73
+        "y": 90
       },
       "id": 28,
       "panels": [],
@@ -1799,7 +2260,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 74
+        "y": 91
       },
       "id": 29,
       "options": {
@@ -1891,7 +2352,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 74
+        "y": 91
       },
       "id": 30,
       "options": {
@@ -1926,7 +2387,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 82
+        "y": 99
       },
       "id": 25,
       "panels": [],
@@ -1999,7 +2460,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 83
+        "y": 100
       },
       "id": 26,
       "options": {
@@ -2060,7 +2521,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 83
+        "y": 100
       },
       "id": 27,
       "options": {
@@ -2144,5 +2605,5 @@
   "timezone": "browser",
   "title": "AgeMon System Metrics",
   "uid": "agemon-system-metrics",
-  "version": 5
+  "version": 6
 }
